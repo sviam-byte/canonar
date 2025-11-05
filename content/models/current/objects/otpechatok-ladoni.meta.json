@@ -1,0 +1,20 @@
+{
+  "id": "obj-VIDI-PALM-91",
+  "era": "current",
+  "name": "Отпечаток ладони",
+  "type": "object",
+  "model_ref": "object",
+  "param_bindings": {
+    "A_star": 180,
+    "E0": 60,
+    "q": 0.56,
+    "rho": 0.985,
+    "exergy_cost": 0.6,
+    "infra_footprint": 0.2,
+    "hazard_rate": 0.3,
+    "witness_count": 112,
+    "topo_class": 0.2
+  },
+  "tags": ["artefact","witness","tdA"],
+  "version_tags": ["current"]
+}
