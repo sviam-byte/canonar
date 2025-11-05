@@ -8,7 +8,10 @@ export default defineConfig({
   integrations: [react()],
   vite: {
     resolve: {
-      alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) }
+      alias: {
+        '@': fileURLToPath(new URL('./src', import.meta.url)),
+        '~': fileURLToPath(new URL('./src', import.meta.url)), // ← добавлено
+      }
     }
   }
 });
