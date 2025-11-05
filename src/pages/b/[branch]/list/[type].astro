@@ -1,13 +1,31 @@
 ---
-const {branch, type} = Astro.params;
-const entries = await fetch(`/b/${branch}/${type}.json`).then(r=>r.json());
+import "@/styles/global.css";
+import siteIndex from "@/data/index.json";
+
+export async function getStaticPaths() {
+  const branches = siteIndex.branches ?? [];
+  const paths = [];
+  for (const b of branches) {
+    for (const t of b.types ?? []) {
+      paths.push({ params: { branch: b.name, type: t } });
+    }
+  }
+  return paths;
+}
+
+const { branch, type } = Astro.params;
+const entries = (siteIndex.entries ?? [])
+  .filter((e) => e.branch === branch && e.type === type)
+  .map((e) => ({ slug: e.meta.slug, title: e.meta.title }));
 ---
 <html lang="ru">
-  <head><meta charset="utf-8" /><title>{type} | {branch} | Канонар</title><link rel="stylesheet" href="/src/styles/global.css" /></head>
+  <head><meta charset="utf-8" /><title>{type} | {branch} | Канонар</title></head>
   <body>
     <main class="container">
-      <h1>{type} – {branch}</h1>
-      <ul>{entries.map((e:any)=> <li><a href={`/b/${branch}/e/${type}/${e.slug}`}>{e.title}</a></li>)}</ul>
+      <h1>{type} — {branch}</h1>
+      <ul>
+        {entries.map((e) => <li><a href={`/b/${branch}/e/${type}/${e.slug}`}>{e.title}</a></li>)}
+      </ul>
     </main>
   </body>
 </html>
