@@ -1,45 +1,48 @@
 ---
-// src/pages/b/[branch]/e/[type]/[slug].astro
 import "@/styles/tokens.css";
 import "@/styles/panel.css";
-import EntityPanel from "@/components/EntityPanel";
+import EntityPanel from "@/components/EntityPanel.tsx";
 import siteIndex from "@/data/index.json";
 import registry from "@/data/models/registry.json";
 
 export async function getStaticPaths() {
   const entries = siteIndex.entries ?? [];
-  return entries.map(e => ({ params:{ branch:e.branch, type:e.type, slug:e.meta.slug }}));
+  return entries.map(e => ({
+    params: { branch: e.branch, type: e.type, slug: e.meta.slug }
+  }));
 }
 
 const { branch, type, slug } = Astro.params;
-const entry = (siteIndex.entries??[]).find(e=>e.branch===branch && e.type===type && e.meta.slug===slug);
-if(!entry) throw new Error(`not found ${branch}/${type}/${slug}`);
+const entry = (siteIndex.entries ?? []).find(
+  e => e.branch === branch && e.type === type && e.meta.slug === slug
+);
+if (!entry) throw new Error(`not found ${branch}/${type}/${slug}`);
 
-const baseType = type.endsWith("s") ? type.slice(0,-1) : type;
-const meta = { ...entry.meta, type: baseType, model_ref: entry.meta?.model_ref ?? baseType, param_bindings: entry.meta?.param_bindings ?? {} };
+const baseType = type.endsWith("s") ? type.slice(0, -1) : type;
+const meta = {
+  ...entry.meta,
+  type: baseType,
+  model_ref: entry.meta?.model_ref ?? baseType,
+  param_bindings: entry.meta?.param_bindings ?? {}
+};
 ---
 <html lang="ru">
-  <head><meta charset="utf-8" /><title>{meta.title} · {branch} · Канонар 4</title></head>
+  <head>
+    <meta charset="utf-8" />
+    <title>{meta.title} · {branch} · Канонар 4</title>
+  </head>
   <body class="kxr">
     <header class="topbar">
       <div class="brand">Кайнракс — Канонар 4</div>
-      <div class="tabs">
-        <span class="tab on">{branch}</span>
-        <span class="tab">b7_community_fork · Pv 1.202</span>
-        <span class="tab">t-cleanup-lineage · Pv 0.112</span>
-      </div>
-      <div class="hud">
-        <div class="chip">β 3</div><div class="chip">Budget C 4</div>
-      </div>
+      <div class="tabs"><span class="tab on">{branch}</span></div>
+      <div class="hud"><div class="chip">β 3</div><div class="chip">Budget C 4</div></div>
     </header>
-
     <main class="grid3">
       <section class="panel panel--wide">
         <div class="panel-head">
           <div class="k-breadcrumb"><span class="k-badge">Реестр</span><span class="sep">/</span>{baseType}</div>
           <div class="k-meter"><div class="k-meter__gauge"></div></div>
         </div>
-
         <EntityPanel client:load branch={branch} meta={meta} viewType={baseType} registry={registry} />
       </section>
     </main>
