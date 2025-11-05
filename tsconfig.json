@@ -5,10 +5,9 @@
     "moduleResolution": "Bundler",
     "strict": true,
     "jsx": "react-jsx",
-    "baseUrl": ".",
-    "paths": {
-      "@/*": ["src/*"]
-    }
+    "baseUrl": "./",
+    "paths": { "@/*": ["src/*"] },
+    "resolveJsonModule": true
   },
   "include": ["src", "scripts", "content"]
 }
