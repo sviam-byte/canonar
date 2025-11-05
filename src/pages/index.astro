@@ -1,12 +1,17 @@
 ---
-const idx = await fetch('/index.json').then(r=>r.json());
+import '../styles/global.css';
+import siteIndex from '@/data/index.json';
 ---
 <html lang="ru">
-  <head><meta charset="utf-8" /><title>Канонар</title><link rel="stylesheet" href="/src/styles/global.css" /></head>
+  <head><meta charset="utf-8" /><title>Канонар</title></head>
   <body>
     <main class="container">
       <h1>Канонар 4.0 · Homeostasis Core</h1>
-      <ul>{idx.branches.map((b:string)=> <li><a href={`/b/${b}`}>Ветка: {b}</a></li>)}</ul>
+      <ul>
+        {siteIndex.branches.map((b) => (
+          <li><a href={`/b/${b.name}`}>Ветка: {b.name}</a></li>
+        ))}
+      </ul>
     </main>
   </body>
 </html>
