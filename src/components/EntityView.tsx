@@ -4,7 +4,6 @@ import ParamSlider from "@/ParamSlider";
 import MetricBadge from "@/MetricBadge";
 import { computeObject, computeCharacter, type RegistryT } from "@/lib/models";
 
-// base64url кодек для query-параметра
 const b64u = {
   enc: (obj: unknown) => {
     const json = JSON.stringify(obj);
@@ -23,75 +22,48 @@ const b64u = {
   },
 };
 
-type Props = {
-  branch: string;
-  meta: any;           // meta из *.meta.json: { type, model_ref, param_bindings? ... }
-  registry: RegistryT; // реестр моделей
-};
-
+type Props = { branch: string; meta: any; registry: RegistryT; };
 const isBrowser = typeof window !== "undefined";
 
-// дефолтные диапазоны
 const DEFAULT_RANGES: Record<string, [number, number, number]> = {
-  // character
-  will: [0, 1, 0.01],
-  loyalty: [0, 1, 0.01],
-  stress: [0, 1, 0.01],
-  resources: [0, 1, 0.01],
-  competence: [0, 1, 0.01],
-  risk_tolerance: [0, 1, 0.01],
-  // object
-  "A*": [10, 1000, 10],
-  A_star: [10, 1000, 10],
-  E: [0, 1000, 5],
-  E0: [0, 1000, 5],
-  q: [0, 1, 0.01],
-  rho: [0.5, 0.999, 0.001],
-  exergy_cost: [0, 3, 0.01],
-  infra_footprint: [0, 3, 0.01],
-  hazard_rate: [0, 1, 0.01],
-  topo_class: [0, 5, 1],
+  will: [0, 1, 0.01], loyalty: [0, 1, 0.01], stress: [0, 1, 0.01],
+  resources: [0, 1, 0.01], competence: [0, 1, 0.01], risk_tolerance: [0, 1, 0.01],
+  "A*": [10, 1000, 10], A_star: [10, 1000, 10], E: [0, 1000, 5], E0: [0, 1000, 5],
+  q: [0, 1, 0.01], rho: [0.5, 0.999, 0.001], exergy_cost: [0, 3, 0.01],
+  infra_footprint: [0, 3, 0.01], hazard_rate: [0, 1, 0.01], topo_class: [0, 5, 1],
   witness_count: [0, 200, 1],
 };
 
 export default function EntityView({ branch, meta, registry }: Props) {
-  // старт из URL (только в браузере), затем из meta.param_bindings
-  const initialFromQuery =
-    isBrowser ? (b64u.dec(new URLSearchParams(window.location.search).get("p")) as Record<string, number> | null) : null;
+  const initialFromQuery = isBrowser
+    ? (b64u.dec(new URLSearchParams(window.location.search).get("p")) as Record<string, number> | null)
+    : null;
 
   const startParams: Record<string, number> =
-    initialFromQuery ??
-    (meta?.param_bindings as Record<string, number> | undefined) ??
-    {};
+    initialFromQuery ?? (meta?.param_bindings as Record<string, number> | undefined) ?? {};
 
   const [params, setParams] = useState<Record<string, number>>(startParams);
 
-  // синхронизация URL-снимка
   useEffect(() => {
     if (!isBrowser) return;
     const q = new URLSearchParams(window.location.search);
     q.set("p", b64u.enc(params));
-    const url = `${window.location.pathname}?${q.toString()}`;
-    window.history.replaceState(null, "", url);
+    window.history.replaceState(null, "", `${window.location.pathname}?${q.toString()}`);
   }, [params]);
 
-  // расчёт метрик
   const metrics = useMemo(() => {
     const metaWithParams = { ...meta, param_bindings: params };
-    if (meta.type === "character") {
-      return computeCharacter(metaWithParams, registry as any, branch as any);
-    }
-    return computeObject(metaWithParams, registry as any, branch as any);
+    return meta.type === "character"
+      ? computeCharacter(metaWithParams, registry as any, branch as any)
+      : computeObject(metaWithParams, registry as any, branch as any);
   }, [params, meta, registry, branch]);
 
-  // построение контролов
   const controls = useMemo(() => {
     const modelId = meta?.model_ref;
     const regModel: any =
       (registry as any)?.models?.[modelId] || (registry as any)?.models?.[meta?.type];
 
     let keys: string[] = [];
-
     if (regModel?.params && typeof regModel.params === "object") {
       keys = Object.keys(regModel.params);
     } else if (meta?.param_bindings && typeof meta.param_bindings === "object") {
@@ -100,12 +72,8 @@ export default function EntityView({ branch, meta, registry }: Props) {
       keys = ["will", "loyalty", "stress", "resources", "competence", "risk_tolerance"];
     } else {
       keys = ["A*", "E", "q", "rho", "exergy_cost", "infra_footprint", "hazard_rate", "topo_class", "witness_count"];
-      if (("A_star" in startParams) || !("A*" in startParams)) {
-        keys = keys.map((k) => (k === "A*" ? "A_star" : k));
-      }
-      if (("E0" in startParams) || !("E" in startParams)) {
-        keys = keys.map((k) => (k === "E" ? "E0" : k));
-      }
+      if (("A_star" in startParams) || !("A*" in startParams)) keys = keys.map((k) => (k === "A*" ? "A_star" : k));
+      if (("E0" in startParams) || !("E" in startParams)) keys = keys.map((k) => (k === "E" ? "E0" : k));
     }
 
     const list: Array<[string, number, number, number]> = keys.map((k) => {
@@ -142,7 +110,6 @@ export default function EntityView({ branch, meta, registry }: Props) {
           />
         ))}
       </div>
-
       <div className="space-y-2">
         <div className="flex flex-wrap gap-2">
           <MetricBadge label="Pv" value={metrics.Pv} />
