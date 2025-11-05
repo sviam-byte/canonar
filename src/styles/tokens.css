@@ -1,0 +1,9 @@
+/* src/styles/tokens.css */
+:root{
+  --bg:#0B0D12; --panel:#10141B; --panel-2:#0E1218;
+  --stroke:#202635; --stroke-2:#2C3447;
+  --fg:#E7ECF2; --muted:#9CA7B6; --accent:#6FE3FF;
+  --good:#7BD88F; --warn:#FFD166; --risk:#FF6B6B;
+  --note:#A3A8BE;
+  --radius:12px; --pad:14px; --gap:12px; --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
