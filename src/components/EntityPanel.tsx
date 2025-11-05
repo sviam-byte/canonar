@@ -1,10 +1,7 @@
-import React, {useEffect, useMemo, useRef, useState} from "react";
+import React, {useEffect, useMemo, useState} from "react";
 import ParamSlider from "@/components/ParamSlider";
 import MetricBadge from "@/components/MetricBadge";
 import { computeObject, computeCharacter, explainObject, explainCharacter, type RegistryT } from "@/lib/models";
-
-function enc(o:any){ return btoa(unescape(encodeURIComponent(JSON.stringify(o)))); }
-function dec(s:string|null){ try{ return s?JSON.parse(decodeURIComponent(escape(atob(s)))):null; }catch{return null;} }
 
 type Meta = {
   type: "object"|"character";
@@ -17,35 +14,55 @@ type Meta = {
   media?: { images?: {src:string; caption?:string}[] };
 };
 
+function enc(o:any){ return btoa(unescape(encodeURIComponent(JSON.stringify(o)))); }
+function dec(s:string|null){
+  try{ return s?JSON.parse(decodeURIComponent(escape(atob(s)))):null; }catch{ return null; }
+}
+
+const hasWindow = () => typeof window !== "undefined";
+
 export default function EntityPanel({
   branch, meta, registry
 }:{branch:string; meta:Meta; registry:RegistryT;}){
-  const initial = dec(new URLSearchParams(location.search).get("p")) ?? meta.param_bindings ?? {};
-  const [params,setParams] = useState<Record<string,number>>(initial);
-  const [urlTimer,setUrlTimer] = useState<number|undefined>(undefined);
+  // SSR-safe initial params: только из meta.param_bindings
+  const [params,setParams] = useState<Record<string,number>>(meta.param_bindings ?? {});
+  const [ready,setReady] = useState(false); // станет true на клиенте после чтения URL
 
-  // аккуратный апдейт URL: не на каждый тик
-  const updateUrl = (p:Record<string,number>)=>{
-    if (urlTimer) clearTimeout(urlTimer);
-    const id = window.setTimeout(()=>{
-      const q = new URLSearchParams(location.search);
-      q.set("p", enc(p));
-      history.replaceState(null,"","?"+q.toString());
-    }, 250);
-    setUrlTimer(id);
-  };
+  // На клиенте: парсим ?p=... один раз после монтирования
+  useEffect(()=>{
+    if (!hasWindow()) return;
+    const q = new URLSearchParams(window.location.search);
+    const fromUrl = dec(q.get("p"));
+    if (fromUrl && typeof fromUrl === "object") {
+      setParams(prev => ({...prev, ...fromUrl}));
+    }
+    setReady(true);
+  },[]);
 
-  // список контролов из реестра
+  // Аккуратная запись в URL при изменении
+  useEffect(()=>{
+    if (!hasWindow()) return;
+    if (!ready) return;
+    const q = new URLSearchParams(window.location.search);
+    q.set("p", enc(params));
+    window.history.replaceState(null, "", "?" + q.toString());
+  }, [params, ready]);
+
+  // Контролы из реестра
   const model = registry.models[meta.type];
   const controls = useMemo(()=>{
     return Object.entries(model.params).map(([k,def])=>({
-      key:k, ...def,
-      value: Number(params[k] ?? meta.param_bindings?.[k] ?? def.min)
+      key:k,
+      min:def.min, max:def.max, step: def.step ?? 1,
+      value: Number(
+        (params as any)[k] ??
+        (meta.param_bindings?.[k] ?? def.min)
+      )
     }));
   }, [model, params, meta]);
 
   const setOne = (k:string,v:number)=>{
-    setParams(s=>{ const next = {...s, [k]:v}; updateUrl(next); return next; });
+    setParams(s=>({ ...s, [k]: v }));
   };
 
   const metrics = useMemo(()=>{
@@ -76,7 +93,7 @@ export default function EntityPanel({
             <ParamSlider
               key={c.key}
               label={c.key}
-              min={c.min} max={c.max} step={c.step ?? 1}
+              min={c.min} max={c.max} step={c.step}
               value={c.value}
               hint={meta.param_hints?.[c.key]}
               docRef={meta.doc_refs?.[c.key]}
@@ -107,7 +124,6 @@ export default function EntityPanel({
         </div>
       </section>
 
-      {/* Контентные блоки для персонажей */}
       {meta.type==="character" && meta.bio ? (
         <section className="bio">
           {meta.bio.text ? <p>{meta.bio.text}</p> : null}
