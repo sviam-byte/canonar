@@ -2,31 +2,43 @@
 import "@/styles/global.css";
 import EntityView from "@/components/EntityView";
 import siteIndex from "@/data/index.json";
+import registry from "@/data/models/registry.json";
 
 export async function getStaticPaths() {
-  // ожидается массив { params: { branch, type, slug } }
-  const entries = (siteIndex.entries ?? []);
+  const entries = siteIndex.entries ?? [];
   return entries.map((e) => ({
-    params: { branch: e.branch, type: e.type, slug: e.meta.slug }
+    params: { branch: e.branch, type: e.type, slug: e.meta.slug },
   }));
 }
 
 const { branch, type, slug } = Astro.params;
+
+// characters -> character, objects -> object, ...
+const baseType = String(type).endsWith("s") ? String(type).slice(0, -1) : String(type);
+
 const entry = (siteIndex.entries ?? []).find(
   (e) => e.branch === branch && e.type === type && e.meta.slug === slug
 );
 if (!entry) throw new Error(`Entry not found: ${branch}/${type}/${slug}`);
 
-const meta = entry.meta;
-// при необходимости подгрузи registry:
-import registry from "@/data/models/registry.json";
+const meta = {
+  ...entry.meta,
+  // не доверяем данным из меты: жёстко проставляем
+  type: baseType,
+  model_ref: entry.meta?.model_ref ?? baseType,
+  param_bindings: entry.meta?.param_bindings ?? {},
+};
 ---
+
 <html lang="ru">
-  <head><meta charset="utf-8" /><title>{meta.title} | {branch} | Канонар</title></head>
+  <head>
+    <meta charset="utf-8" />
+    <title>{meta.title} | {branch} | Канонар</title>
+  </head>
   <body>
     <main class="container">
       <h1>{meta.title}</h1>
-      <EntityView meta={meta} registry={registry} />
+      <EntityView branch={branch} meta={meta} viewType={baseType} registry={registry} />
     </main>
   </body>
 </html>
