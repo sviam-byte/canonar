@@ -1,105 +1,132 @@
-import React,{useMemo,useState,useEffect} from "react";
-import { computeObject, computeCharacter, type RegistryT } from "@/lib/models";
+import React, {useEffect, useMemo, useRef, useState} from "react";
+import ParamSlider from "@/components/ParamSlider";
+import MetricBadge from "@/components/MetricBadge";
+import { computeObject, computeCharacter, explainObject, explainCharacter, type RegistryT } from "@/lib/models";
 
-const isBrowser = typeof window !== "undefined";
-const enc = (o:any)=> {
-  const j = JSON.stringify(o);
-  const b = isBrowser ? btoa(unescape(encodeURIComponent(j))) : Buffer.from(j).toString("base64");
-  return b.replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
+function enc(o:any){ return btoa(unescape(encodeURIComponent(JSON.stringify(o)))); }
+function dec(s:string|null){ try{ return s?JSON.parse(decodeURIComponent(escape(atob(s)))):null; }catch{return null;} }
+
+type Meta = {
+  type: "object"|"character";
+  title?: string;
+  subtitle?: string;
+  param_bindings?: Record<string,number>;
+  param_hints?: Record<string,string>;
+  doc_refs?: Record<string,string>;
+  bio?: { text?: string; roles?: string[]; sigils?: string[]; };
+  media?: { images?: {src:string; caption?:string}[] };
 };
-const dec = (s:string|null)=>{ if(!s) return null;
-  const b=s.replace(/-/g,"+").replace(/_/g,"/");
-  try{
-    const j=isBrowser?decodeURIComponent(escape(atob(b))):Buffer.from(b,"base64").toString("utf8");
-    return JSON.parse(j);
-  }catch{return null;}
-};
 
-export default function EntityPanel({branch,meta,viewType,registry}:{branch:string;meta:any;viewType:string;registry:RegistryT;}){
-  const initial = dec(isBrowser? new URLSearchParams(location.search).get("p"):null) ?? meta.param_bindings ?? {};
-  const [p,setP]=useState<Record<string,number>>(initial);
+export default function EntityPanel({
+  branch, meta, registry
+}:{branch:string; meta:Meta; registry:RegistryT;}){
+  const initial = dec(new URLSearchParams(location.search).get("p")) ?? meta.param_bindings ?? {};
+  const [params,setParams] = useState<Record<string,number>>(initial);
+  const [urlTimer,setUrlTimer] = useState<number|undefined>(undefined);
 
-  useEffect(()=>{ if(!isBrowser) return;
-    const q=new URLSearchParams(location.search); q.set("p",enc(p));
-    history.replaceState(null,"","?"+q.toString()); },[p]);
+  // аккуратный апдейт URL: не на каждый тик
+  const updateUrl = (p:Record<string,number>)=>{
+    if (urlTimer) clearTimeout(urlTimer);
+    const id = window.setTimeout(()=>{
+      const q = new URLSearchParams(location.search);
+      q.set("p", enc(p));
+      history.replaceState(null,"","?"+q.toString());
+    }, 250);
+    setUrlTimer(id);
+  };
 
-  const M = useMemo(()=>{
-    const m = {...meta, param_bindings:p, type:viewType, model_ref: meta?.model_ref ?? viewType};
-    try{ return viewType==="character"? computeCharacter(m,registry,branch) : computeObject(m,registry,branch); }
-    catch{
-      const A=Number(p.A_star ?? p["A*"] ?? 100), E=Number(p.E0 ?? p.E ?? 0);
-      const dose = A? E/A : 0, drift=Math.abs(dose-1)*0.25, topo=Math.log1p(Number(p.witness_count??0))*0.2;
-      return { Pv:0.3, Vsigma:0.7, S:1/(1+Math.exp(-(0.3-0.7-drift+topo))), dose, drift, topo };
-    }
-  },[p,meta,registry,branch,viewType]);
+  // список контролов из реестра
+  const model = registry.models[meta.type];
+  const controls = useMemo(()=>{
+    return Object.entries(model.params).map(([k,def])=>({
+      key:k, ...def,
+      value: Number(params[k] ?? meta.param_bindings?.[k] ?? def.min)
+    }));
+  }, [model, params, meta]);
 
-  const ranges = (registry.models?.[meta.model_ref ?? viewType]?.params)||{};
-  const keys = Object.keys(ranges);
+  const setOne = (k:string,v:number)=>{
+    setParams(s=>{ const next = {...s, [k]:v}; updateUrl(next); return next; });
+  };
 
-  const dosePct = Math.min(100, (Number(p.E0??p.E??0)/Math.max(1,Number(p.A_star??p["A*"]??100)))*100);
+  const metrics = useMemo(()=>{
+    const m = {...meta, param_bindings: params};
+    return meta.type==="character"
+      ? computeCharacter(m as any, registry, branch)
+      : computeObject(m as any, registry, branch);
+  },[params,meta,registry,branch]);
+
+  const explain = useMemo(()=>{
+    const m = {...meta, param_bindings: params};
+    return meta.type==="character"
+      ? explainCharacter(m as any, registry, branch)
+      : explainObject(m as any, registry, branch);
+  },[params,meta,registry,branch]);
 
   return (
-    <div>
-      <div className="row">
-        <div className="card">
-          <div className="stats">
-            <div className="stat"><div className="lbl">Pv</div><div className="val">{M.Pv.toFixed(3)}</div></div>
-            <div className="stat"><div className="lbl">Vσ</div><div className="val">{M.Vsigma.toFixed(3)}</div></div>
-            <div className="stat"><div className="lbl">S</div><div className="val">{M.S.toFixed(3)}</div></div>
-            <div className="stat"><div className="lbl">dose</div><div className="val">{M.dose.toFixed(3)}</div></div>
-            <div className="stat"><div className="lbl">drift</div><div className="val">{M.drift.toFixed(3)}</div></div>
-            <div className="stat"><div className="lbl">topo</div><div className="val">{M.topo.toFixed(3)}</div></div>
-          </div>
-          <div style={{marginTop:12}}>
-            <div className="lbl">Лимит сектора L* загрузка</div>
-            <div className="scale"><div className="scale__fill" style={{width:"69%"}}/></div>
-            <div className="note">83 / 120 (69%)</div>
-          </div>
+    <div className="entity">
+      <header className="entity__head">
+        <h1>{meta.title || "Entity"}</h1>
+        {meta.subtitle ? <div className="entity__sub">{meta.subtitle}</div> : null}
+      </header>
+
+      <section className="entity__grid">
+        {/* Ползунки */}
+        <div className="entity__left">
+          {controls.map(c=>(
+            <ParamSlider
+              key={c.key}
+              label={c.key}
+              min={c.min} max={c.max} step={c.step ?? 1}
+              value={c.value}
+              hint={meta.param_hints?.[c.key]}
+              docRef={meta.doc_refs?.[c.key]}
+              onChange={(v)=>setOne(c.key,v)}
+            />
+          ))}
         </div>
 
-        <div className="card">
-          <div className="lbl">tda_signature</div>
-          <div className="note" style={{fontFamily:"var(--mono)"}}>β=[0,1,0]; pers:c912..ee</div>
-          <div className="lbl" style={{marginTop:8}}>witnesses</div>
-          <div className="note">hrysh:micro_scars#812..974</div>
-        </div>
-      </div>
+        {/* Метрики + объяснение */}
+        <div className="entity__right">
+          <div className="metrics">
+            <MetricBadge label="Pv"    value={metrics.Pv}    desc="прирост предсказательной ценности"/>
+            <MetricBadge label="Vσ"    value={metrics.Vsigma} desc="онтологический долг"/>
+            <MetricBadge label="S"     value={metrics.S}     desc="стабильность формы/кода"/>
+            {"dose" in metrics ? <MetricBadge label="dose"  value={(metrics as any).dose} /> : null}
+            {"drift" in metrics ? <MetricBadge label="drift" value={(metrics as any).drift}/> : null}
+            {"topo" in metrics ? <MetricBadge label="topo"  value={(metrics as any).topo} /> : null}
+            {"influence" in metrics ? <MetricBadge label="Influence" value={(metrics as any).influence}/> : null}
+            {"monstro_pr" in metrics ? <MetricBadge label="Pr[monstro]" value={(metrics as any).monstro_pr}/> : null}
+          </div>
 
-      <div className="row">
-        <div className="card">
-          <div className="lbl">Внимание A*/E</div>
-          <div className="scale"><div className="scale__fill" style={{width: `${dosePct}%`}}/></div>
-          <div className="note">доза = {M.dose.toFixed(3)}</div>
-          <div className="sliders" style={{marginTop:10}}>
-            {keys.map(k=>{
-              const spec = (ranges as any)[k];
-              const val = Number(p[k] ?? spec.min);
-              return (
-                <div className="slider" key={k}>
-                  <div className="slider__row">
-                    <div className="slider__name">{k}</div>
-                    <div className="slider__val">{val.toFixed(3)}</div>
-                  </div>
-                  <input type="range" min={spec.min} max={spec.max} step={spec.step??((spec.max-spec.min)/100)}
-                    value={val} onChange={e=>setP(s=>({...s,[k]:Number(e.currentTarget.value)}))}/>
-                </div>
-              );
-            })}
+          <div className="explain">
+            <div className="explain__title">Почему так</div>
+            <ul>
+              {explain.map((t,i)=>(<li key={i}>{t}</li>))}
+            </ul>
           </div>
         </div>
+      </section>
 
-        <div className="card">
-          <div className="lbl">Действия</div>
-          <div className="actions" style={{marginTop:8}}>
-            <button className="btn">План экспозиций</button>
-            <button className="btn">Показать Vσ по чеку</button>
-            <button className="btn warn">Локализовать трещину</button>
-            <button className="btn">Объединить дубли</button>
-            <button className="btn risk">Открыть тёмный слой</button>
+      {/* Контентные блоки для персонажей */}
+      {meta.type==="character" && meta.bio ? (
+        <section className="bio">
+          {meta.bio.text ? <p>{meta.bio.text}</p> : null}
+          <div className="bio__tags">
+            {meta.bio.roles?.length ? <div>Роли: {meta.bio.roles.join(", ")}</div> : null}
+            {meta.bio.sigils?.length ? <div>Сигиллы: {meta.bio.sigils.join(", ")}</div> : null}
           </div>
-          <div className="note" style={{marginTop:10}}>После процедуры: пересчёт Pv/Vσ/S и лог аудита.</div>
-        </div>
-      </div>
+        </section>
+      ) : null}
+
+      {meta.media?.images?.length ? (
+        <section className="media">
+          {meta.media.images.map((m,i)=>(
+            <figure key={i}><img src={m.src} alt={m.caption || ""}/><figcaption>{m.caption}</figcaption></figure>
+          ))}
+        </section>
+      ) : null}
+
+      <footer className="entity__foot">URL хранит снимок ползунков.</footer>
     </div>
   );
 }
