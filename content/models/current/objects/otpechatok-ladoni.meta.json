@@ -1,20 +1,25 @@
 {
-  "id": "obj-VIDI-PALM-91",
-  "era": "current",
-  "name": "Отпечаток ладони",
+  "id": "obj:VOID-PALM-01",
   "type": "object",
-  "model_ref": "object",
-  "param_bindings": {
-    "A_star": 180,
-    "E0": 60,
-    "q": 0.56,
-    "rho": 0.985,
-    "exergy_cost": 0.6,
-    "infra_footprint": 0.2,
-    "hazard_rate": 0.3,
-    "witness_count": 112,
-    "topo_class": 0.2
+  "title": "отпечаток ладони",
+  "param_bindings": { "A_star": 180, "E0": 60, "q": 0.6, "rho": 0.98, "exergy_cost": 0.4, "infra_footprint": 0.2, "hazard_rate": 0.08, "witness_count": 87, "topo_class": 0.25, "causal_penalty": 0.0, "cvar_alpha": 0.05, "dark_flag": 0 },
+  "param_hints": {
+    "A_star": "целевое внимание для стабильной формы",
+    "E0": "фактическая экспозиция за окно",
+    "q": "качество свидетелей",
+    "rho": "память ветки/масспамять",
+    "exergy_cost": "энергозатраты на поддержку",
+    "infra_footprint": "инфраструктурный след",
+    "hazard_rate": "частота аварий/инцидентов",
+    "witness_count": "число свидетелей",
+    "topo_class": "топологическая защита формы",
+    "causal_penalty": "штраф за ломки причинности",
+    "cvar_alpha": "уровень хвостового риска",
+    "dark_flag": "тёмный слой включён"
   },
-  "tags": ["artefact","witness","tdA"],
-  "version_tags": ["current"]
+  "doc_refs": {
+    "q": "/docs/models/witness-quality",
+    "cvar_alpha": "/docs/models/cvar",
+    "topo_class": "/docs/models/topology"
+  }
 }
