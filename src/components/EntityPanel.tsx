@@ -76,7 +76,8 @@ export default function EntityPanel({ branch, meta, registry }: Props) {
 
   // стартовые значения: meta.param_bindings, затем дефолты из реестра
   const [params, setParams] = useState<Record<string, number>>(() => {
-    const base = { ...(meta?.param_bindings as Record<string, number> | undefined) } ?? {};
+    const base: Record<string, number> = {
+      ...(meta?.param_bindings as Record<string, number> | undefined ?? {})
     const defs = model?.params ?? {};
     for (const [k, def] of Object.entries(defs)) if (base[k] == null) base[k] = def.min;
     return base;
