@@ -1,0 +1,18 @@
+---
+import EntityView from "@/components/EntityView";
+const { branch, type, slug } = Astro.params;
+const idx = await fetch('/index.json').then(r=>r.json());
+const entry = idx.entries.find((e:any)=>e.branch===branch && e.type===type && e.meta.slug===slug);
+const registry = await fetch('/models/registry.json').then(r=>r.json());
+---
+<html lang="ru">
+  <head><meta charset="utf-8"/><title>{entry.meta.title}</title><link rel="stylesheet" href="/src/styles/global.css"/></head>
+  <body>
+    <main class="container">
+      <h1>{entry.meta.title}</h1>
+      <p class="subtitle">{entry.meta.subtitle}</p>
+      <EntityView client:load branch={branch!} meta={entry.meta} registry={registry}/>
+      <section><h2>Описание</h2><p>Теги: {entry.meta.tags.join(", ")}</p></section>
+    </main>
+  </body>
+</html>

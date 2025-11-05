@@ -1,0 +1,19 @@
+{
+  "eras": [
+    {
+      "id": "current",
+      "name": "Current Era",
+      "description": "Present-day canonical timeline"
+    },
+    {
+      "id": "pre-rector",
+      "name": "Pre-Rector Era",
+      "description": "Before the Rector incident"
+    },
+    {
+      "id": "pre-borders",
+      "name": "Pre-Borders Era",
+      "description": "Before the border establishment"
+    }
+  ]
+}

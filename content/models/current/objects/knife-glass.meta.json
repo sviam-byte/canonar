@@ -1,0 +1,16 @@
+{
+  "id": "knife-glass",
+  "type": "object",
+  "era": "current",
+  "name": "Glass Knife",
+  "category": "artifact",
+  "description": "A ceremonial blade made from enchanted glass",
+  "properties": {
+    "material": "enchanted glass",
+    "origin": "unknown",
+    "condition": "pristine"
+  },
+  "associations": [],
+  "created": "2025-11-05T00:00:00Z",
+  "updated": "2025-11-05T00:00:00Z"
+}

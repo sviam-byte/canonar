@@ -1,0 +1,16 @@
+{
+  "id": "rhiannon",
+  "type": "character",
+  "era": "current",
+  "name": "Rhiannon",
+  "title": "The Wanderer",
+  "description": "A mysterious traveler with unknown origins",
+  "traits": [
+    "curious",
+    "resourceful",
+    "enigmatic"
+  ],
+  "relationships": [],
+  "created": "2025-11-05T00:00:00Z",
+  "updated": "2025-11-05T00:00:00Z"
+}

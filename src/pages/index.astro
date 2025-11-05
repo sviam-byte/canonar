@@ -1,0 +1,12 @@
+---
+const idx = await fetch('/index.json').then(r=>r.json());
+---
+<html lang="ru">
+  <head><meta charset="utf-8" /><title>Канонар</title><link rel="stylesheet" href="/src/styles/global.css" /></head>
+  <body>
+    <main class="container">
+      <h1>Канонар 4.0 · Homeostasis Core</h1>
+      <ul>{idx.branches.map((b:string)=> <li><a href={`/b/${b}`}>Ветка: {b}</a></li>)}</ul>
+    </main>
+  </body>
+</html>

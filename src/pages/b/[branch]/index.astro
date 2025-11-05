@@ -1,0 +1,60 @@
+---
+/**
+ * Полная, безопасная версия страницы ветки.
+ * Ключевые правки:
+ * 1) getStaticPaths берёт ветки из корневого index.json (который генерится до astro build).
+ * 2) Импорт JSON-файлов статически (без сетевого fetch на этапе сборки).
+ * 3) Импорт стилей через ESM, а не <link href="/src/...">.
+ */
+
+import '../../styles/global.css';
+
+// ВАЖНО: путь до корня от src/pages/b/[branch]/ = ../../../../
+import siteIndex from '../../../../index.json'; // { branches: [{ name, types: string[] }, ...] }
+
+type Branch = { name: string; types: string[] };
+type SiteIndex = { branches: Branch[] };
+
+export function getStaticPaths() {
+  const idx = siteIndex as SiteIndex;
+  return idx.branches.map((b) => ({ params: { branch: b.name } }));
+}
+
+const { branch } = Astro.params;
+
+// Ищем данные текущей ветки локально (без fetch)
+const idx = siteIndex as SiteIndex;
+const current = idx.branches.find((b) => b.name === branch);
+
+// Защита от отсутствующих веток (на всякий случай)
+if (!current) {
+  // Если по какой-то причине ветка не найдена — отрисуем stub-страницу.
+  // (До сюда доходить не должны, т.к. getStaticPaths генерит только валидные пути.)
+  const msg = `Ветка "${branch}" не найдена в index.json`;
+  console.warn('[canonAR]', msg);
+}
+---
+
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <title>{branch} | Канонар</title>
+  </head>
+  <body>
+    <main class="container">
+      <h1>Ветка: {branch}</h1>
+
+      {current ? (
+        <ul>
+          {current.types.map((t) => (
+            <li>
+              <a href={`/b/${branch}/list/${encodeURIComponent(t)}`}>{t}</a>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p>Эта ветка не найдена в реестре.</p>
+      )}
+    </main>
+  </body>
+</html>
