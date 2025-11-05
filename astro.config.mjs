@@ -7,5 +7,7 @@ export default defineConfig({
   site: 'https://canonar.netlify.app',
   output: 'static',
   integrations: [react()],
-  vite: { resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } } }
+  vite: {
+    resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } }
+  }
 });
