@@ -1,31 +1,26 @@
 {
   "models": {
-    "object": {
-      "params": {
-        "A_star": {"min":10,"max":1000,"step":10},
-        "E0": {"min":0,"max":1000,"step":5},
-        "q": {"min":0,"max":1,"step":0.01},
-        "rho": {"min":0.5,"max":0.999,"step":0.001},
-        "exergy_cost": {"min":0,"max":3,"step":0.01},
-        "infra_footprint": {"min":0,"max":3,"step":0.01},
-        "hazard_rate": {"min":0,"max":1,"step":0.01},
-        "witness_count": {"min":0,"max":300,"step":1},
-        "topo_class": {"min":0,"max":1,"step":0.01},
-        "causal_penalty": {"min":0,"max":2,"step":0.01},
-        "cvar_alpha": {"min":0.01,"max":0.2,"step":0.01},
-        "dark_flag": {"min":0,"max":1,"step":1}
-      }
-    },
     "character": {
       "params": {
-        "will":{"min":0,"max":1,"step":0.01},
-        "loyalty":{"min":0,"max":1,"step":0.01},
-        "stress":{"min":0,"max":1,"step":0.01},
-        "resources":{"min":0,"max":1,"step":0.01},
-        "competence":{"min":0,"max":1,"step":0.01},
-        "risk_tolerance":{"min":0,"max":1,"step":0.01},
-        "mandate_power":{"min":0,"max":1,"step":0.01},
-        "dark_exposure":{"min":0,"max":1,"step":0.01}
+        "will":           { "min": 0,   "max": 1,   "step": 0.01 },
+        "loyalty":        { "min": 0,   "max": 1,   "step": 0.01 },
+        "stress":         { "min": 0,   "max": 1,   "step": 0.01 },
+        "resources":      { "min": 0,   "max": 1,   "step": 0.01 },
+        "competence":     { "min": 0,   "max": 1,   "step": 0.01 },
+        "risk_tolerance": { "min": 0,   "max": 1,   "step": 0.01 }
+      }
+    },
+    "object": {
+      "params": {
+        "A_star":          { "min": 10,   "max": 1000, "step": 10   },
+        "E0":              { "min": 0,    "max": 1000, "step": 5    },
+        "q":               { "min": 0,    "max": 1,    "step": 0.01 },
+        "rho":             { "min": 0.5,  "max": 0.999,"step": 0.001},
+        "exergy_cost":     { "min": 0,    "max": 3,    "step": 0.01 },
+        "infra_footprint": { "min": 0,    "max": 3,    "step": 0.01 },
+        "hazard_rate":     { "min": 0,    "max": 1,    "step": 0.01 },
+        "witness_count":   { "min": 0,    "max": 200,  "step": 1    },
+        "topo_class":      { "min": 0,    "max": 1,    "step": 0.05 }
       }
     }
   }
