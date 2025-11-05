@@ -1,50 +1,40 @@
 ---
-import "@/styles/tokens.css";
-import "@/styles/panel.css";
-import EntityPanel from "@/components/EntityPanel.tsx";
-import siteIndex from "@/data/index.json";
+import "~/styles/global.css";
+import EntityPanel from "@/components/EntityPanel";
 import registry from "@/data/models/registry.json";
 
 export async function getStaticPaths() {
-  const entries = siteIndex.entries ?? [];
-  return entries.map(e => ({
-    params: { branch: e.branch, type: e.type, slug: e.meta.slug }
+  const { default: idx } = await import("@/data/index.json");
+  const paths = idx.entries.map((e) => ({
+    params: { branch: e.branch, type: e.type, slug: e.meta.slug },
+    props: {
+      branch: e.branch,
+      type: e.type,
+      meta: e.meta,
+    },
   }));
+  return paths;
 }
 
-const { branch, type, slug } = Astro.params;
-const entry = (siteIndex.entries ?? []).find(
-  e => e.branch === branch && e.type === type && e.meta.slug === slug
-);
-if (!entry) throw new Error(`not found ${branch}/${type}/${slug}`);
+// нормализация мн. → ед.
+const normType = (t: string) =>
+  t === "characters" ? "character" : t === "objects" ? "object" : t;
 
-const baseType = type.endsWith("s") ? type.slice(0, -1) : type;
-const meta = {
-  ...entry.meta,
-  type: baseType,
-  model_ref: entry.meta?.model_ref ?? baseType,
-  param_bindings: entry.meta?.param_bindings ?? {}
-};
+const { branch, type, meta } = Astro.props;
+const modelKey = normType(type);
 ---
+
 <html lang="ru">
   <head>
     <meta charset="utf-8" />
-    <title>{meta.title} · {branch} · Канонар 4</title>
+    <title>{meta.title}</title>
   </head>
-  <body class="kxr">
-    <header class="topbar">
-      <div class="brand">Кайнракс — Канонар 4</div>
-      <div class="tabs"><span class="tab on">{branch}</span></div>
-      <div class="hud"><div class="chip">β 3</div><div class="chip">Budget C 4</div></div>
-    </header>
-    <main class="grid3">
-      <section class="panel panel--wide">
-        <div class="panel-head">
-          <div class="k-breadcrumb"><span class="k-badge">Реестр</span><span class="sep">/</span>{baseType}</div>
-          <div class="k-meter"><div class="k-meter__gauge"></div></div>
-        </div>
-        <EntityPanel client:load branch={branch} meta={meta} viewType={baseType} registry={registry} />
-      </section>
-    </main>
+  <body>
+    <EntityPanel
+      branch={branch}
+      type={modelKey}
+      meta={meta}
+      registry={registry}
+    />
   </body>
 </html>
