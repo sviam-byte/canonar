@@ -1,18 +1,26 @@
 ---
-import EntityView from "@/components/EntityView";
-const { branch, type, slug } = Astro.params;
-const idx = await fetch('/index.json').then(r=>r.json());
-const entry = idx.entries.find((e:any)=>e.branch===branch && e.type===type && e.meta.slug===slug);
-const registry = await fetch('/models/registry.json').then(r=>r.json());
+import '../../../styles/global.css';
+import siteIndex from '@/data/index.json';
+
+export function getStaticPaths() {
+  return siteIndex.branches.flatMap((b) =>
+    b.types.map((t) => ({ params: { branch: b.name, type: t } }))
+  );
+}
+
+const { branch, type } = Astro.params;
+const entries = (await import(`@/data/b/${branch}/${type}.json`)).default;
 ---
 <html lang="ru">
-  <head><meta charset="utf-8"/><title>{entry.meta.title}</title><link rel="stylesheet" href="/src/styles/global.css"/></head>
+  <head><meta charset="utf-8" /><title>{type} · {branch} · Канонар</title></head>
   <body>
     <main class="container">
-      <h1>{entry.meta.title}</h1>
-      <p class="subtitle">{entry.meta.subtitle}</p>
-      <EntityView client:load branch={branch!} meta={entry.meta} registry={registry}/>
-      <section><h2>Описание</h2><p>Теги: {entry.meta.tags.join(", ")}</p></section>
+      <h1>{type} – {branch}</h1>
+      <ul>
+        {entries.map((e) => (
+          <li><a href={`/b/${branch}/e/${type}/${e.slug}`}>{e.title}</a></li>
+        ))}
+      </ul>
     </main>
   </body>
 </html>
