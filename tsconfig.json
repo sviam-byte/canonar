@@ -6,8 +6,10 @@
     "strict": true,
     "jsx": "react-jsx",
     "baseUrl": "./",
-    "paths": { "@/*": ["src/*"] },
-    "resolveJsonModule": true
+    "paths": {
+      "@/*": ["src/*"],
+      "~/*": ["src/*"]              // ← добавлено, если используешь "~"
+    }
   },
   "include": ["src", "scripts", "content"]
 }
