@@ -4,13 +4,12 @@ import ParamSlider from "@/ParamSlider";
 import MetricBadge from "@/MetricBadge";
 import { computeObject, computeCharacter, type RegistryT } from "@/lib/models";
 
-// --- безопасный base64url для query ---
+// base64url кодек для query-параметра
 const b64u = {
   enc: (obj: unknown) => {
     const json = JSON.stringify(obj);
     const utf8 = new TextEncoder().encode(json);
-    // @ts-ignore
-    const bin = Array.from(utf8, (b: number) => String.fromCharCode(b)).join("");
+    const bin = Array.from(utf8, (b) => String.fromCharCode(b)).join("");
     const b64 = typeof btoa === "function" ? btoa(bin) : Buffer.from(bin, "binary").toString("base64");
     return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
   },
@@ -26,13 +25,13 @@ const b64u = {
 
 type Props = {
   branch: string;
-  meta: any;            // ожидает meta из *.meta.json + { type, model_ref, param_bindings? }
-  registry: RegistryT;  // реестр моделей/параметров, если есть
+  meta: any;           // meta из *.meta.json: { type, model_ref, param_bindings? ... }
+  registry: RegistryT; // реестр моделей
 };
 
 const isBrowser = typeof window !== "undefined";
 
-// разумные дефолтные диапазоны, в т.ч. для альтернативных ключей
+// дефолтные диапазоны
 const DEFAULT_RANGES: Record<string, [number, number, number]> = {
   // character
   will: [0, 1, 0.01],
@@ -41,7 +40,7 @@ const DEFAULT_RANGES: Record<string, [number, number, number]> = {
   resources: [0, 1, 0.01],
   competence: [0, 1, 0.01],
   risk_tolerance: [0, 1, 0.01],
-  // object (оба варианта ключей поддержаны)
+  // object
   "A*": [10, 1000, 10],
   A_star: [10, 1000, 10],
   E: [0, 1000, 5],
@@ -56,19 +55,18 @@ const DEFAULT_RANGES: Record<string, [number, number, number]> = {
 };
 
 export default function EntityView({ branch, meta, registry }: Props) {
-  // читаем снимок из URL только в браузере
+  // старт из URL (только в браузере), затем из meta.param_bindings
   const initialFromQuery =
-    isBrowser ? b64u.dec(new URLSearchParams(window.location.search).get("p")) : null;
+    isBrowser ? (b64u.dec(new URLSearchParams(window.location.search).get("p")) as Record<string, number> | null) : null;
 
-  // стартовые параметры: из URL > из meta.param_bindings > пусто
   const startParams: Record<string, number> =
-    (initialFromQuery as Record<string, number> | null) ??
-    (meta?.param_bindings as Record<string, number> | null) ??
+    initialFromQuery ??
+    (meta?.param_bindings as Record<string, number> | undefined) ??
     {};
 
   const [params, setParams] = useState<Record<string, number>>(startParams);
 
-  // держим URL-снимок в актуальном состоянии только в браузере
+  // синхронизация URL-снимка
   useEffect(() => {
     if (!isBrowser) return;
     const q = new URLSearchParams(window.location.search);
@@ -77,7 +75,7 @@ export default function EntityView({ branch, meta, registry }: Props) {
     window.history.replaceState(null, "", url);
   }, [params]);
 
-  // выбираем модель расчёта
+  // расчёт метрик
   const metrics = useMemo(() => {
     const metaWithParams = { ...meta, param_bindings: params };
     if (meta.type === "character") {
@@ -86,10 +84,7 @@ export default function EntityView({ branch, meta, registry }: Props) {
     return computeObject(metaWithParams, registry as any, branch as any);
   }, [params, meta, registry, branch]);
 
-  // формируем список ползунков:
-  // 1) если в registry есть описание параметров модели — берём оттуда
-  // 2) иначе — берём дефолты под тип
-  // 3) сортируем по имени для стабильности
+  // построение контролов
   const controls = useMemo(() => {
     const modelId = meta?.model_ref;
     const regModel: any =
@@ -100,24 +95,11 @@ export default function EntityView({ branch, meta, registry }: Props) {
     if (regModel?.params && typeof regModel.params === "object") {
       keys = Object.keys(regModel.params);
     } else if (meta?.param_bindings && typeof meta.param_bindings === "object") {
-      // показываем только те ключи, которые реально есть в карточке
       keys = Object.keys(meta.param_bindings);
     } else if (meta?.type === "character") {
       keys = ["will", "loyalty", "stress", "resources", "competence", "risk_tolerance"];
     } else {
-      // базовый набор для объектов
-      keys = [
-        "A*",
-        "E",
-        "q",
-        "rho",
-        "exergy_cost",
-        "infra_footprint",
-        "hazard_rate",
-        "topo_class",
-        "witness_count",
-      ];
-      // если в карточке используются A_star/E0 — подменим
+      keys = ["A*", "E", "q", "rho", "exergy_cost", "infra_footprint", "hazard_rate", "topo_class", "witness_count"];
       if (("A_star" in startParams) || !("A*" in startParams)) {
         keys = keys.map((k) => (k === "A*" ? "A_star" : k));
       }
@@ -126,21 +108,24 @@ export default function EntityView({ branch, meta, registry }: Props) {
       }
     }
 
-    // собираем [key, min, max, step] с учётом registry или дефолтов
     const list: Array<[string, number, number, number]> = keys.map((k) => {
       const spec = regModel?.params?.[k];
       if (spec && typeof spec === "object") {
-        const min = Number(spec.min ?? DEFAULT_RANGES[k]?.[0] ?? 0);
-        const max = Number(spec.max ?? DEFAULT_RANGES[k]?.[1] ?? 1);
-        const step = Number(spec.step ?? DEFAULT_RANGES[k]?.[2] ?? (max - min) / 100 || 0.01);
+        const min = Number(spec.min ?? (DEFAULT_RANGES[k]?.[0] ?? 0));
+        const max = Number(spec.max ?? (DEFAULT_RANGES[k]?.[1] ?? 1));
+        const est = (max - min) / 100;
+        const base = spec.step ?? (DEFAULT_RANGES[k]?.[2] ?? est);
+        const step = Number(Number.isFinite(base) && base > 0 ? base : 0.01);
         return [k, min, max, step];
       }
-      const [min, max, step] = DEFAULT_RANGES[k] ?? [0, 1, 0.01];
+      const [min, max, stepDef] = DEFAULT_RANGES[k] ?? [0, 1, 0.01];
+      const est = (max - min) / 100;
+      const step = Number(Number.isFinite(stepDef) && stepDef > 0 ? stepDef : est || 0.01);
       return [k, min, max, step];
     });
 
     return list.sort((a, b) => a[0].localeCompare(b[0]));
-  }, [meta, registry]);
+  }, [meta, registry, startParams]);
 
   return (
     <div className="grid md:grid-cols-2 gap-6">
