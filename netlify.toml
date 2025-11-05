@@ -1,18 +1,15 @@
 [build]
-  base = "."
-  command = "npm install && npm run build"
+  command = "npm ci && npm run build"
   publish = "dist"
 
 [build.environment]
   NODE_VERSION = "20"
 
-# Если это SPA с роутером — нужен fallback на index.html
 [[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
 
-# Агрессивный кэш для статических ассетов Astro
 [[headers]]
   for = "/assets/*"
   [headers.values]
