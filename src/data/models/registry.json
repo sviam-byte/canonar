@@ -1,26 +1,65 @@
+// src/data/models/registry.json
 {
   "models": {
     "object": {
       "params": {
-        "A_star":           { "min": 10,   "max": 1000, "step": 10   },
-        "E0":               { "min": 0,    "max": 1000, "step": 5    },
-        "q":                { "min": 0,    "max": 1,    "step": 0.01 },
-        "rho":              { "min": 0.50, "max": 0.999,"step": 0.001},
-        "exergy_cost":      { "min": 0,    "max": 3,    "step": 0.01 },
-        "infra_footprint":  { "min": 0,    "max": 3,    "step": 0.01 },
-        "hazard_rate":      { "min": 0,    "max": 1,    "step": 0.01 },
-        "witness_count":    { "min": 0,    "max": 200,  "step": 1    },
-        "topo_class":       { "min": 0,    "max": 1,    "step": 0.01 }
+        "A*": { "min": 10, "max": 500, "step": 10 },
+        "E":  { "min": 0,  "max": 800, "step": 5 },
+        "q":  { "min": 0,  "max": 1,   "step": 0.05 },
+        "rho":{ "min": 0.8,"max": 0.999,"step": 0.001 },
+        "exergy_cost":   { "min": 0, "max": 1, "step": 0.05 },
+        "infra_footprint":{ "min": 0, "max": 1, "step": 0.05 },
+        "hazard_rate":   { "min": 0, "max": 1, "step": 0.02 },
+        "topo_class":    { "min": 0, "max": 1, "step": 0.05 },
+        "witness_count": { "min": 0, "max": 500, "step": 1 },
+        "causal_penalty":{ "min": 0, "max": 2, "step": 0.05 },
+        "dark_flag":     { "min": 0, "max": 1, "step": 1 },
+        "cvar_alpha":    { "min": 0.01, "max": 0.2, "step": 0.01 }
       }
     },
     "character": {
       "params": {
-        "will":            { "min": 0, "max": 1, "step": 0.01 },
-        "loyalty":         { "min": 0, "max": 1, "step": 0.01 },
-        "stress":          { "min": 0, "max": 1, "step": 0.01 },
-        "resources":       { "min": 0, "max": 1, "step": 0.01 },
-        "competence":      { "min": 0, "max": 1, "step": 0.01 },
-        "risk_tolerance":  { "min": 0, "max": 1, "step": 0.01 }
+        "will": { "min": 0, "max": 1, "step": 0.02 },
+        "loyalty": { "min": 0, "max": 1, "step": 0.02 },
+        "stress": { "min": 0, "max": 1, "step": 0.02 },
+        "resources": { "min": 0, "max": 1, "step": 0.02 },
+        "competence": { "min": 0, "max": 1, "step": 0.02 },
+        "risk_tolerance": { "min": 0, "max": 1, "step": 0.02 },
+        "mandate_power": { "min": 0, "max": 1, "step": 0.02 },
+        "dark_exposure": { "min": 0, "max": 1, "step": 0.02 }
+      }
+    },
+    "place": {
+      "params": {
+        "load_factor": { "min": 0, "max": 2, "step": 0.05 },
+        "O2_margin": { "min": -0.2, "max": 0.5, "step": 0.01 },
+        "traffic": { "min": 0, "max": 1, "step": 0.02 },
+        "maintenance_rate": { "min": 0, "max": 1, "step": 0.02 },
+        "shock_freq": { "min": 0, "max": 0.5, "step": 0.01 }
+      }
+    },
+    "protocol": {
+      "params": {
+        "scope": { "min": 0, "max": 1, "step": 0.02 },
+        "strictness": { "min": 0, "max": 1, "step": 0.02 },
+        "cost": { "min": 0, "max": 1, "step": 0.02 },
+        "reversibility": { "min": 0, "max": 1, "step": 0.02 },
+        "human_cost": { "min": 0, "max": 1, "step": 0.02 }
+      }
+    },
+    "event": {
+      "params": {
+        "evidence_level": { "min": 0, "max": 1, "step": 0.02 },
+        "casualties": { "min": 0, "max": 10000, "step": 10 },
+        "resource_burn": { "min": 0, "max": 1, "step": 0.02 },
+        "policy_impact": { "min": 0, "max": 1, "step": 0.02 }
+      }
+    },
+    "document": {
+      "params": {
+        "credibility": { "min": 0, "max": 1, "step": 0.02 },
+        "novelty": { "min": 0, "max": 1, "step": 0.02 },
+        "bias": { "min": 0, "max": 1, "step": 0.02 }
       }
     }
   }
