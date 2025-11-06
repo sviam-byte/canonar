@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+// src/components/EntityPanel.tsx
+import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import type { RegistryT } from "@/lib/models";
 import {
   computeCharacter,
@@ -13,7 +14,10 @@ import Scatter2D from "@/components/charts/Scatter2D";
 import MapPin from "@/components/MapPin";
 import MetricHelp from "@/components/MetricHelp";
 
-/* ───────────────────── types ───────────────────── */
+import EligibilityBadges from "@/components/EligibilityBadges";
+import { getEligibility, scenarioRelevantParams } from "@/lib/eligibility";
+
+/* ───────── types ───────── */
 type ViewTypePlural =
   | "characters"
   | "objects"
@@ -27,11 +31,11 @@ type Props = {
   branch: string;
   viewType?: ViewTypePlural; // prefer
   type?: ViewTypePlural;     // legacy
-  meta: any;
+  meta: any;                 // per-entity meta.json
   registry: RegistryT;
 };
 
-/* ───────────────────── utils ───────────────────── */
+/* ───────── utils ───────── */
 const isBrowser = typeof window !== "undefined";
 const clamp = (x: number, min: number, max: number) => Math.min(max, Math.max(min, x));
 const fmt = (x: unknown, d = 3) =>
@@ -39,21 +43,13 @@ const fmt = (x: unknown, d = 3) =>
 const singular = (t: string) => (t.endsWith("s") ? t.slice(0, -1) : t);
 
 const enc = (o: unknown) => {
-  try {
-    return btoa(unescape(encodeURIComponent(JSON.stringify(o))));
-  } catch {
-    return "";
-  }
+  try { return btoa(unescape(encodeURIComponent(JSON.stringify(o)))); } catch { return ""; }
 };
 const dec = <T,>(s: string | null): T | null => {
-  try {
-    return s ? (JSON.parse(decodeURIComponent(escape(atob(s)))) as T) : null;
-  } catch {
-    return null;
-  }
+  try { return s ? (JSON.parse(decodeURIComponent(escape(atob(s)))) as T) : null; } catch { return null; }
 };
 
-/* ─────────────── fallback param registry ─────────────── */
+/* ───────── fallback params (если registry пуст) ───────── */
 type ParamDef = { min: number; max: number; step?: number; label?: string };
 
 const DEFAULT_PARAMS: Record<string, Record<string, ParamDef>> = {
@@ -82,7 +78,7 @@ const DEFAULT_PARAMS: Record<string, Record<string, ParamDef>> = {
   }
 };
 
-/* ─────────────── tiny UI atoms ─────────────── */
+/* ───────── tiny UI atoms ───────── */
 function Row({ children }: { children: React.ReactNode }) {
   return <div style={{ display: "flex", gap: 12, alignItems: "center" }}>{children}</div>;
 }
@@ -115,13 +111,22 @@ function LabeledRange(props: {
   onChange: (v: number) => void;
   hint?: string;
   doc?: string;
+  disabled?: boolean;
+  highlighted?: boolean;
 }) {
-  const { k, label, min, max, step, val, onChange, hint, doc } = props;
+  const { k, label, min, max, step, val, onChange, hint, doc, disabled, highlighted } = props;
   const id = `slider_${k}`;
   return (
-    <div style={{ padding: "10px 0" }}>
+    <div
+      style={{
+        padding: "10px 0",
+        opacity: disabled ? 0.6 : 1,
+        background: highlighted ? "rgba(140,180,255,0.06)" : "transparent",
+        borderRadius: 6
+      }}
+    >
       <Row>
-        <label htmlFor={id} title={hint} style={{ width: 160, fontWeight: 600, cursor: "help" }}>
+        <label htmlFor={id} title={hint} style={{ width: 180, fontWeight: 600, cursor: "help" }}>
           {label}
         </label>
         <input
@@ -131,6 +136,7 @@ function LabeledRange(props: {
           max={max}
           step={step}
           value={val}
+          disabled={disabled}
           onChange={(e) => onChange(Number(e.target.value))}
           style={{ flex: 1 }}
         />
@@ -140,6 +146,7 @@ function LabeledRange(props: {
           max={max}
           step={step}
           value={val}
+          disabled={disabled}
           onChange={(e) => onChange(clamp(Number(e.target.value), min, max))}
           style={{ width: 96 }}
           title={hint}
@@ -150,18 +157,18 @@ function LabeledRange(props: {
             target="_blank"
             rel="noreferrer"
             style={{ fontSize: 12, opacity: 0.8, textDecoration: "underline" }}
-            title="Открыть пояснение модели"
           >
             doc
           </a>
         ) : null}
+        {disabled ? <span title="Заблокировано лором" style={{ fontSize: 12, opacity: 0.7, paddingLeft: 6 }}>🔒</span> : null}
       </Row>
       {hint ? <div style={{ fontSize: 12, opacity: 0.65, marginTop: 4 }}>{hint}</div> : null}
     </div>
   );
 }
 
-/* ─────────────── main ─────────────── */
+/* ───────── main ───────── */
 export default function EntityPanel(props: Props) {
   const branch = props.branch;
   const viewTypePlural = (props.viewType || props.type || "objects") as string;
@@ -171,6 +178,7 @@ export default function EntityPanel(props: Props) {
   const registry = props.registry || ({} as RegistryT);
   const meta = props.meta || {};
 
+  // параметры модели → registry, иначе дефолт
   const registryModelParams =
     (registry as any)?.models?.[modelKey]?.params ??
     (registry as any)?.models?.[tkey]?.params ??
@@ -181,16 +189,21 @@ export default function EntityPanel(props: Props) {
       ? registryModelParams
       : DEFAULT_PARAMS[tkey] || DEFAULT_PARAMS.object;
 
-  // initial state from meta, then fill by min
-  const [params, setParams] = useState<Record<string, number>>(() => {
-    const base: Record<string, number> = { ...(meta?.param_bindings ?? {}) };
-    for (const [k, def] of Object.entries(modelParams)) {
-      if (base[k] == null) base[k] = Number(def.min);
-    }
-    return base;
-  });
+  // блокировки: глобальные из registry.locks и локальные из meta.param_locked
+  const lockedGlobal = (registry as any)?.locks?.[tkey] || {};
+  const lockedLocal = Array.isArray(meta.param_locked) ? new Set<string>(meta.param_locked) : new Set<string>();
+  const isLocked = (k: string) => !!lockedLocal.has(k) || !!(lockedGlobal?.[k]?.locked);
 
-  // apply p= from URL once on client
+  // baseline для сбросов
+  const canonRef = useRef<Record<string, number>>({ ...(meta?.param_bindings ?? {}) });
+  const defaultsRef = useRef<Record<string, number>>(
+    Object.fromEntries(Object.entries(modelParams).map(([k, def]) => [k, Number(def.min)]))
+  );
+
+  // старт: canon поверх дефолтов
+  const [params, setParams] = useState<Record<string, number>>(() => ({ ...defaultsRef.current, ...canonRef.current }));
+
+  // URL p=
   useEffect(() => {
     if (!isBrowser) return;
     const q = new URLSearchParams(window.location.search);
@@ -198,8 +211,6 @@ export default function EntityPanel(props: Props) {
     if (u && typeof u === "object") setParams((old) => ({ ...old, ...u }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // keep URL in sync
   useEffect(() => {
     if (!isBrowser) return;
     const q = new URLSearchParams(window.location.search);
@@ -208,7 +219,7 @@ export default function EntityPanel(props: Props) {
     window.history.replaceState(null, "", url);
   }, [params]);
 
-  // pick compute + simulate
+  // compute + simulate
   type ComputeFn = (m: any, r: any, b: string) => any;
   type SimFn = (m: any, days?: number) => any[];
   const COMPUTE: Record<string, ComputeFn> = {
@@ -230,7 +241,6 @@ export default function EntityPanel(props: Props) {
   const compute = COMPUTE[tkey] || computeObject;
   const simulate = SIM[tkey] || simulateObject;
 
-  // metrics + sim
   const metrics = useMemo(() => {
     const augmented = { ...meta, type: tkey, model_ref: modelKey, param_bindings: params };
     try {
@@ -242,12 +252,26 @@ export default function EntityPanel(props: Props) {
 
   const sim = useMemo(() => simulate({ param_bindings: params }, 30), [simulate, params]);
 
-  // controls view
+  // контролы: подсказки и доки
   const hints = (meta?.param_hints ?? {}) as Record<string, string>;
   const docs = (meta?.param_docs ?? {}) as Record<string, string>;
-  const controls = useMemo(
-    () =>
-      Object.entries(modelParams).map(([k, def]) => ({
+
+  // UI фильтры и фокус
+  const [showOnlyAdjustable, setShowOnlyAdjustable] = useState(true);
+  const [scenarioFocus, setScenarioFocus] = useState<string>("");
+  const relevant = useMemo(
+    () => (scenarioFocus ? new Set(scenarioRelevantParams(tkey, scenarioFocus)) : null),
+    [scenarioFocus, tkey]
+  );
+
+  const controls = useMemo(() => {
+    const out: Array<{
+      k: string; min: number; max: number; step: number; val: number; hint?: string; doc?: string; label: string; disabled: boolean; highlighted: boolean;
+    }> = [];
+    for (const [k, def] of Object.entries(modelParams)) {
+      const disabled = isLocked(k);
+      if (showOnlyAdjustable && disabled) continue;
+      out.push({
         k,
         min: Number(def.min),
         max: Number(def.max),
@@ -255,12 +279,15 @@ export default function EntityPanel(props: Props) {
         val: Number(params[k] ?? def.min),
         hint: hints[k],
         doc: docs[k],
-        label: def.label || k
-      })),
-    [modelParams, params, hints, docs]
-  );
+        label: def.label || k,
+        disabled,
+        highlighted: relevant ? relevant.has(k) : false
+      });
+    }
+    return out;
+  }, [modelParams, params, hints, docs, showOnlyAdjustable, relevant]);
 
-  // explanation text
+  // пояснение
   const explain = useMemo(() => {
     if (tkey === "character") {
       const will = Number(params.will ?? 0.5);
@@ -268,27 +295,38 @@ export default function EntityPanel(props: Props) {
       const res = Number(params.resources ?? 0.5);
       const loy = Number(params.loyalty ?? 0.5);
       const infl = (will * 0.6 + comp * 0.6 + res * 0.4) * (0.7 + 0.3 * loy);
+      const mon = 0.6 * Number(params.stress ?? 0.3) + 0.4 * Number(params.dark_exposure ?? 0.2);
       return [
         `Influence ≈ (0.6·will + 0.6·competence + 0.4·resources)·(0.7 + 0.3·loyalty) = ${fmt(infl, 3)}`,
-        `Pv ↑ с influence, Pv ↓ при высоком stress. Vσ ↑ от stress и risk_tolerance.`,
-        `S = σ(1.1·Pv − 1.0·Vσ − 0.8·drift + 0.7·topo).`
+        `Pr[monstro] ↑ от stress и dark_exposure = ${fmt(mon, 3)}`,
+        `S = σ(α₁·Pv − α₂·Vσ − α₃·drift + α₄·topo).`
       ];
     }
     const A = Number(params["A*"] ?? params.A_star ?? 100);
     const E = Number(params.E ?? params.E0 ?? 0);
     const dose = A ? E / A : 0;
     return [
-      `dose = E / A* = ${fmt(dose, 3)}. Идеал ≈ 1.`,
-      `Pv растёт с log(1+witness) и topo; Vσ — от exergy/infra/hazard и ошибок дозы.`,
-      `S = σ(1.2·Pv − 1.1·Vσ − 0.9·drift + 0.8·topo + 0.25·log(1+witness)).`
+      `dose = E / A* = ${fmt(dose, 3)} (целевое ≈ 1)`,
+      `Vσ ↑ от exergy_cost, infra_footprint, hazard_rate и ошибок дозы`,
+      `S = σ(1.2·Pv − 1.1·Vσ − 0.9·drift + 0.8·topo + 0.25·log(1+witness))`
     ];
   }, [params, tkey]);
 
-  // scatter keys
-  const metricKeys = ["Pv", "Vsigma", "S", "dose", "drift", "topo", ...(tkey === "character" ? ["influence", "monstro_pr"] : [] as string[])]
-    .filter((k) => k in (metrics || {}));
+  // метрики для scatter
+  const metricKeys = useMemo(() => {
+    const base = ["Pv", "Vsigma", "S", "dose", "drift", "topo"];
+    if (tkey === "character") base.push("influence", "monstro_pr");
+    return base.filter((k) => k in (metrics || {}));
+  }, [metrics, tkey]);
+
   const [xKey, setXKey] = useState<string>(metricKeys[0] ?? "Pv");
   const [yKey, setYKey] = useState<string>(metricKeys[1] ?? "Vsigma");
+
+  useEffect(() => {
+    // если ключи изменились после первого рендера
+    if (!metricKeys.includes(xKey)) setXKey(metricKeys[0] ?? "Pv");
+    if (!metricKeys.includes(yKey)) setYKey(metricKeys[1] ?? metricKeys[0] ?? "Vsigma");
+  }, [metricKeys]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const path = sim.map((p) => ({
     x: Number((p as any)[xKey] ?? 0),
@@ -296,33 +334,67 @@ export default function EntityPanel(props: Props) {
   }));
   const point = { x: Number((metrics as any)[xKey] ?? 0), y: Number((metrics as any)[yKey] ?? 0) };
 
-  // actions
-  const reset = useCallback(() => {
-    const base: Record<string, number> = {};
-    for (const [k, def] of Object.entries(modelParams)) base[k] = Number(def.min);
-    setParams(base);
-  }, [modelParams]);
+  // годность сценариев
+  const eligibility = useMemo(
+    () => getEligibility(tkey, metrics as any, params, registry),
+    [tkey, metrics, params, registry]
+  );
 
+  // действия: сбросы и share
+  const resetCanon = useCallback(() => setParams((s) => ({ ...s, ...canonRef.current })), []);
+  const resetDefaults = useCallback(() => setParams({ ...defaultsRef.current }), []);
+  const resetUrl = useCallback(() => {
+    if (!isBrowser) return;
+    const q = new URLSearchParams(window.location.search);
+    q.delete("p");
+    const url = `${window.location.pathname}?${q.toString()}`;
+    window.history.replaceState(null, "", url);
+    setParams((s) => ({ ...defaultsRef.current, ...canonRef.current }));
+  }, []);
   const share = useCallback(() => {
     if (!isBrowser) return;
     const url = window.location.href;
     if (navigator?.clipboard?.writeText) navigator.clipboard.writeText(url);
   }, []);
 
-  /* ─────────────── render ─────────────── */
+  /* ───────── render ───────── */
   return (
     <div className="entity-panel" style={{ display: "grid", gap: 16, gridTemplateColumns: "1fr 1fr" }}>
-      {/* left: controls */}
+      {/* левая колонка: контролы */}
       <section>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
           <h3 style={{ margin: 0 }}>{meta?.title ?? meta?.name ?? "card"}</h3>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={reset}>Reset</button>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button onClick={resetCanon} title="Сбросить к канону сущности">Canon</button>
+            <button onClick={resetDefaults} title="Сбросить к дефолтам модели">Defaults</button>
+            <button onClick={resetUrl} title="Очистить p= в URL">Clear URL</button>
             <button onClick={share} title="Копировать URL">Share</button>
           </div>
         </div>
+
         <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 8 }}>
           Ветка: <code>{branch}</code> • Тип: <code>{tkey}</code> • Модель: <code>{modelKey}</code>
+        </div>
+
+        <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>
+          <label style={{ display: "inline-flex", gap: 6, alignItems: "center", fontSize: 12 }}>
+            <input
+              type="checkbox"
+              checked={showOnlyAdjustable}
+              onChange={(e) => setShowOnlyAdjustable(e.target.checked)}
+            />
+            только регулируемые
+          </label>
+
+          <label style={{ display: "inline-flex", gap: 6, alignItems: "center", fontSize: 12 }}>
+            фокус:
+            <select value={scenarioFocus} onChange={(e) => setScenarioFocus(e.target.value)} style={{ padding: "2px 6px" }}>
+              <option value="">—</option>
+              <option value="negotiation">переговоры</option>
+              <option value="repair_nomonstr">ремонт без монстра</option>
+              <option value="incident_localize">локализация инцидента</option>
+            </select>
+          </label>
         </div>
 
         {controls.map((c) => (
@@ -337,12 +409,15 @@ export default function EntityPanel(props: Props) {
             onChange={(v) => setParams((s) => ({ ...s, [c.k]: v }))}
             hint={c.hint}
             doc={c.doc}
+            disabled={c.disabled}
+            highlighted={c.highlighted}
           />
         ))}
       </section>
 
-      {/* right: metrics, graphs, map, docs */}
+      {/* правая колонка: метрики, графики, карта, годность */}
       <section>
+        {/* метрики */}
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
           {"Pv" in (metrics || {}) && <Badge label="Pv" value={(metrics as any).Pv} hint="Предсказательная ценность" />}
           {"Vsigma" in (metrics || {}) && <Badge label="Vσ" value={(metrics as any).Vsigma} hint="Онтологический долг" />}
@@ -364,6 +439,13 @@ export default function EntityPanel(props: Props) {
           )}
         </div>
 
+        {/* годность */}
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontWeight: 600, marginBottom: 6 }}>Годность по сценариям</div>
+          <EligibilityBadges items={eligibility} />
+        </div>
+
+        {/* пояснение */}
         <div style={{ padding: 12, border: "1px solid var(--muted, #3d3d3d)", borderRadius: 8, marginBottom: 12 }}>
           <div style={{ fontWeight: 600, marginBottom: 6 }}>Что происходит</div>
           <ul style={{ margin: 0, paddingLeft: 18 }}>
@@ -373,33 +455,40 @@ export default function EntityPanel(props: Props) {
           </ul>
         </div>
 
+        {/* графики */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
           <Spark data={sim} x="t" y="S" title="Стабильность S (30d)" />
           <RadarParams params={params} defs={modelParams} title="Профиль параметров" />
         </div>
 
-        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}>
-          <label>Scatter X:</label>
-          <select value={xKey} onChange={(e) => setXKey(e.target.value)}>
-            {metricKeys.map((k) => (
-              <option key={k} value={k}>{k}</option>
-            ))}
-          </select>
-          <label>Y:</label>
-          <select value={yKey} onChange={(e) => setYKey(e.target.value)}>
-            {metricKeys.map((k) => (
-              <option key={k} value={k}>{k}</option>
-            ))}
-          </select>
-        </div>
-        <Scatter2D
-          path={path}
-          currentPoint={point}
-          xLabel={xKey}
-          yLabel={yKey}
-          title="Траектория (30d) и текущая точка"
-        />
+        {/* scatter */}
+        {metricKeys.length >= 1 ? (
+          <>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6, flexWrap: "wrap" }}>
+              <label>Scatter X:</label>
+              <select value={xKey} onChange={(e) => setXKey(e.target.value)}>
+                {metricKeys.map((k) => (
+                  <option key={k} value={k}>{k}</option>
+                ))}
+              </select>
+              <label>Y:</label>
+              <select value={yKey} onChange={(e) => setYKey(e.target.value)}>
+                {metricKeys.map((k) => (
+                  <option key={k} value={k}>{k}</option>
+                ))}
+              </select>
+            </div>
+            <Scatter2D
+              path={path}
+              currentPoint={point}
+              xLabel={xKey}
+              yLabel={yKey}
+              title="Траектория (30d) и текущая точка"
+            />
+          </>
+        ) : null}
 
+        {/* карта */}
         <MapPin
           title="Локализация на карте"
           imageUrl={meta?.map?.image}
@@ -408,10 +497,12 @@ export default function EntityPanel(props: Props) {
           onChange={(mx, my) => setParams((s) => ({ ...s, map_x: mx, map_y: my }))}
         />
 
+        {/* справка */}
         <div style={{ marginTop: 12 }}>
           <MetricHelp />
         </div>
 
+        {/* био */}
         {tkey === "character" && (meta?.bio || meta?.subtitle) ? (
           <div style={{ marginTop: 12, padding: 12, border: "1px dashed var(--muted, #3d3d3d)", borderRadius: 8 }}>
             <div style={{ fontWeight: 600, marginBottom: 6 }}>Био</div>
@@ -420,6 +511,7 @@ export default function EntityPanel(props: Props) {
           </div>
         ) : null}
 
+        {/* инспектор */}
         <details style={{ marginTop: 8 }}>
           <summary>Model inspector</summary>
           <pre style={{ whiteSpace: "pre-wrap", fontSize: 12, opacity: 0.85 }}>
