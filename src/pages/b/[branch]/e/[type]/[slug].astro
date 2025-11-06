@@ -7,7 +7,6 @@ import registry from "@/data/models/registry.json";
 export async function getStaticPaths() {
   const { default: idx } = await import("@/data/index.json");
 
-  // Берём meta из сгенерированных per-entity файлов
   const importMeta = (e) =>
     import(`@/data/b/${e.branch}/e/${e.type}/${e.meta.slug}.meta.json`);
 
@@ -16,7 +15,7 @@ export async function getStaticPaths() {
       const { default: meta } = await importMeta(e);
       return {
         params: { branch: e.branch, type: e.type, slug: e.meta.slug },
-        props: { branch: e.branch, type: e.type, meta },
+        props: { branch: e.branch, type: e.type, meta }
       };
     })
   );
@@ -36,10 +35,10 @@ const { branch, type, meta } = Astro.props;
   <body>
     <EntityPanel
       branch={branch}
-      viewType={type}      /* plural: characters|objects|... */
+      viewType={type}   /* plural */
       meta={meta}
       registry={registry}
-      client:load          /* включает ползунки и живые метрики */
+      client:load
     />
   </body>
 </html>
