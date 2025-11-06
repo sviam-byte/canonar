@@ -1,40 +1,45 @@
 ---
+// src/pages/b/[branch]/e/[type]/[slug].astro
 import "~/styles/global.css";
 import EntityPanel from "@/components/EntityPanel";
 import registry from "@/data/models/registry.json";
 
 export async function getStaticPaths() {
   const { default: idx } = await import("@/data/index.json");
-  const paths = idx.entries.map((e) => ({
-    params: { branch: e.branch, type: e.type, slug: e.meta.slug },
-    props: {
-      branch: e.branch,
-      type: e.type,
-      meta: e.meta,
-    },
-  }));
+
+  // Берём meta из сгенерированных per-entity файлов
+  const importMeta = (e) =>
+    import(`@/data/b/${e.branch}/e/${e.type}/${e.meta.slug}.meta.json`);
+
+  const paths = await Promise.all(
+    idx.entries.map(async (e) => {
+      const { default: meta } = await importMeta(e);
+      return {
+        params: { branch: e.branch, type: e.type, slug: e.meta.slug },
+        props: { branch: e.branch, type: e.type, meta },
+      };
+    })
+  );
+
   return paths;
 }
 
-// нормализация мн. → ед.
-const normType = (t: string) =>
-  t === "characters" ? "character" : t === "objects" ? "object" : t;
-
 const { branch, type, meta } = Astro.props;
-const modelKey = normType(type);
 ---
 
 <html lang="ru">
   <head>
     <meta charset="utf-8" />
     <title>{meta.title}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
   </head>
   <body>
     <EntityPanel
       branch={branch}
-      type={modelKey}
+      viewType={type}      /* plural: characters|objects|... */
       meta={meta}
       registry={registry}
+      client:load          /* включает ползунки и живые метрики */
     />
   </body>
 </html>
