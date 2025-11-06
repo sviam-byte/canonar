@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import type { RegistryT } from "@/lib/models";
 import {
+  getParamDefs,
   computeCharacter,
   computeObject,
   simulateCharacter,
@@ -43,18 +44,10 @@ const fmt = (x: unknown, d = 3) =>
 const singular = (t: string) => (t.endsWith("s") ? t.slice(0, -1) : t);
 
 const enc = (o: unknown) => {
-  try {
-    return btoa(unescape(encodeURIComponent(JSON.stringify(o))));
-  } catch {
-    return "";
-  }
+  try { return btoa(unescape(encodeURIComponent(JSON.stringify(o)))); } catch { return ""; }
 };
 const dec = <T,>(s: string | null): T | null => {
-  try {
-    return s ? (JSON.parse(decodeURIComponent(escape(atob(s)))) as T) : null;
-  } catch {
-    return null;
-  }
+  try { return s ? (JSON.parse(decodeURIComponent(escape(atob(s)))) as T) : null; } catch { return null; }
 };
 
 /* ───────── fallback params (если registry пуст) ───────── */
@@ -126,19 +119,7 @@ function LabeledRange(props: {
   onResetDefault?: () => void;
 }) {
   const {
-    k,
-    label,
-    min,
-    max,
-    step,
-    val,
-    onChange,
-    hint,
-    doc,
-    disabled,
-    highlighted,
-    onResetCanon,
-    onResetDefault,
+    k, label, min, max, step, val, onChange, hint, doc, disabled, highlighted, onResetCanon, onResetDefault,
   } = props;
   const id = `slider_${k}`;
   return (
@@ -186,23 +167,12 @@ function LabeledRange(props: {
             doc
           </a>
         ) : null}
-        {disabled ? (
-          <span title="Заблокировано лором" style={{ fontSize: 12, opacity: 0.7, paddingLeft: 6 }}>
-            🔒
-          </span>
-        ) : null}
+        {disabled ? <span title="Заблокировано лором" style={{ fontSize: 12, opacity: 0.7, paddingLeft: 6 }}>🔒</span> : null}
         {onResetCanon ? (
           <button
             onClick={onResetCanon}
             title="Сброс к канону"
-            style={{
-              marginLeft: 6,
-              border: "1px solid #444",
-              background: "#111",
-              color: "#ddd",
-              borderRadius: 6,
-              padding: "2px 6px",
-            }}
+            style={{ marginLeft: 6, border: "1px solid #444", background: "#111", color: "#ddd", borderRadius: 6, padding: "2px 6px" }}
           >
             ↺C
           </button>
@@ -211,14 +181,7 @@ function LabeledRange(props: {
           <button
             onClick={onResetDefault}
             title="Сброс к дефолту модели"
-            style={{
-              marginLeft: 6,
-              border: "1px solid #444",
-              background: "#111",
-              color: "#ddd",
-              borderRadius: 6,
-              padding: "2px 6px",
-            }}
+            style={{ marginLeft: 6, border: "1px solid #444", background: "#111", color: "#ddd", borderRadius: 6, padding: "2px 6px" }}
           >
             ↺D
           </button>
@@ -239,18 +202,16 @@ export default function EntityPanel(props: Props) {
   const registry = props.registry || ({} as RegistryT);
   const meta = props.meta || {};
 
-  // параметры модели → registry, иначе дефолт
+  // параметры модели из registry с учётом extends/hybrid, иначе дефолты
   const registryModelParams =
-    (registry as any)?.models?.[modelKey]?.params ??
-    (registry as any)?.models?.[tkey]?.params ??
-    null;
+    getParamDefs(registry, String(modelKey), String(tkey));
 
   const modelParams: Record<string, ParamDef> =
     registryModelParams && Object.keys(registryModelParams).length > 0
       ? registryModelParams
       : DEFAULT_PARAMS[tkey] || DEFAULT_PARAMS.object;
 
-  // блокировки: глобальные из registry.locks и локальные из meta.param_locked
+  // блокировки: глобальные и локальные
   const lockedGlobal = (registry as any)?.locks?.[tkey] || {};
   const lockedLocal = Array.isArray(meta.param_locked) ? new Set<string>(meta.param_locked) : new Set<string>();
 
@@ -259,6 +220,14 @@ export default function EntityPanel(props: Props) {
   const defaultsRef = useRef<Record<string, number>>(
     Object.fromEntries(Object.entries(modelParams).map(([k, def]) => [k, Number(def.min)])),
   );
+
+  // если сменились defs — обнови defaults для кнопки Defaults
+  useEffect(() => {
+    defaultsRef.current = Object.fromEntries(
+      Object.entries(modelParams).map(([k, def]) => [k, Number(def.min)])
+    );
+    // не трогаем params, чтобы не затирать p= из URL
+  }, [modelParams]);
 
   // старт: canon поверх дефолтов
   const [params, setParams] = useState<Record<string, number>>(() => ({
@@ -280,7 +249,7 @@ export default function EntityPanel(props: Props) {
           setParams((s) => ({ ...s, ...js.params }));
         }
       } catch {
-        // ignore
+        /* no-op */
       }
     };
     reader.readAsText(file);
@@ -348,7 +317,7 @@ export default function EntityPanel(props: Props) {
 
   const sim = useMemo(() => simulate({ param_bindings: params }, 30), [simulate, params]);
 
-  // контролы: подсказки и доки
+  // подсказки и доки
   const hints = (meta?.param_hints ?? {}) as Record<string, string>;
   const docs = (meta?.param_docs ?? {}) as Record<string, string>;
 
