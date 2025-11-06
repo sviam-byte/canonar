@@ -5,7 +5,7 @@ import {
   computeCharacter,
   computeObject,
   simulateCharacter,
-  simulateObject
+  simulateObject,
 } from "@/lib/models";
 
 import Spark from "@/components/charts/Spark";
@@ -43,10 +43,18 @@ const fmt = (x: unknown, d = 3) =>
 const singular = (t: string) => (t.endsWith("s") ? t.slice(0, -1) : t);
 
 const enc = (o: unknown) => {
-  try { return btoa(unescape(encodeURIComponent(JSON.stringify(o)))); } catch { return ""; }
+  try {
+    return btoa(unescape(encodeURIComponent(JSON.stringify(o))));
+  } catch {
+    return "";
+  }
 };
 const dec = <T,>(s: string | null): T | null => {
-  try { return s ? (JSON.parse(decodeURIComponent(escape(atob(s)))) as T) : null; } catch { return null; }
+  try {
+    return s ? (JSON.parse(decodeURIComponent(escape(atob(s)))) as T) : null;
+  } catch {
+    return null;
+  }
 };
 
 /* ───────── fallback params (если registry пуст) ───────── */
@@ -62,7 +70,7 @@ const DEFAULT_PARAMS: Record<string, Record<string, ParamDef>> = {
     topo: { min: 0, max: 3, step: 0.01, label: "topo" },
     witness_count: { min: 0, max: 500, step: 1, label: "witness_count" },
     map_x: { min: 0, max: 100, step: 1, label: "map_x" },
-    map_y: { min: 0, max: 100, step: 1, label: "map_y" }
+    map_y: { min: 0, max: 100, step: 1, label: "map_y" },
   },
   character: {
     will: { min: 0, max: 1, step: 0.01, label: "will" },
@@ -72,10 +80,11 @@ const DEFAULT_PARAMS: Record<string, Record<string, ParamDef>> = {
     competence: { min: 0, max: 1, step: 0.01, label: "competence" },
     risk_tolerance: { min: 0, max: 1, step: 0.01, label: "risk_tolerance" },
     mandate_power: { min: 0, max: 1, step: 0.01, label: "mandate_power" },
+    dark_exposure: { min: 0, max: 1, step: 0.01, label: "dark_exposure" },
     topo: { min: 0, max: 3, step: 0.01, label: "topo" },
     map_x: { min: 0, max: 100, step: 1, label: "map_x" },
-    map_y: { min: 0, max: 100, step: 1, label: "map_y" }
-  }
+    map_y: { min: 0, max: 100, step: 1, label: "map_y" },
+  },
 };
 
 /* ───────── tiny UI atoms ───────── */
@@ -93,7 +102,7 @@ function Badge({ label, value, hint }: { label: string; value: number | string; 
         padding: "6px 10px",
         borderRadius: 8,
         border: "1px solid var(--muted, #3d3d3d)",
-        fontSize: 12
+        fontSize: 12,
       }}
     >
       <span style={{ opacity: 0.7 }}>{label}</span>
@@ -113,8 +122,24 @@ function LabeledRange(props: {
   doc?: string;
   disabled?: boolean;
   highlighted?: boolean;
+  onResetCanon?: () => void;
+  onResetDefault?: () => void;
 }) {
-  const { k, label, min, max, step, val, onChange, hint, doc, disabled, highlighted } = props;
+  const {
+    k,
+    label,
+    min,
+    max,
+    step,
+    val,
+    onChange,
+    hint,
+    doc,
+    disabled,
+    highlighted,
+    onResetCanon,
+    onResetDefault,
+  } = props;
   const id = `slider_${k}`;
   return (
     <div
@@ -122,7 +147,7 @@ function LabeledRange(props: {
         padding: "10px 0",
         opacity: disabled ? 0.6 : 1,
         background: highlighted ? "rgba(140,180,255,0.06)" : "transparent",
-        borderRadius: 6
+        borderRadius: 6,
       }}
     >
       <Row>
@@ -161,7 +186,43 @@ function LabeledRange(props: {
             doc
           </a>
         ) : null}
-        {disabled ? <span title="Заблокировано лором" style={{ fontSize: 12, opacity: 0.7, paddingLeft: 6 }}>🔒</span> : null}
+        {disabled ? (
+          <span title="Заблокировано лором" style={{ fontSize: 12, opacity: 0.7, paddingLeft: 6 }}>
+            🔒
+          </span>
+        ) : null}
+        {onResetCanon ? (
+          <button
+            onClick={onResetCanon}
+            title="Сброс к канону"
+            style={{
+              marginLeft: 6,
+              border: "1px solid #444",
+              background: "#111",
+              color: "#ddd",
+              borderRadius: 6,
+              padding: "2px 6px",
+            }}
+          >
+            ↺C
+          </button>
+        ) : null}
+        {onResetDefault ? (
+          <button
+            onClick={onResetDefault}
+            title="Сброс к дефолту модели"
+            style={{
+              marginLeft: 6,
+              border: "1px solid #444",
+              background: "#111",
+              color: "#ddd",
+              borderRadius: 6,
+              padding: "2px 6px",
+            }}
+          >
+            ↺D
+          </button>
+        ) : null}
       </Row>
       {hint ? <div style={{ fontSize: 12, opacity: 0.65, marginTop: 4 }}>{hint}</div> : null}
     </div>
@@ -192,16 +253,51 @@ export default function EntityPanel(props: Props) {
   // блокировки: глобальные из registry.locks и локальные из meta.param_locked
   const lockedGlobal = (registry as any)?.locks?.[tkey] || {};
   const lockedLocal = Array.isArray(meta.param_locked) ? new Set<string>(meta.param_locked) : new Set<string>();
-  const isLocked = (k: string) => !!lockedLocal.has(k) || !!(lockedGlobal?.[k]?.locked);
 
   // baseline для сбросов
   const canonRef = useRef<Record<string, number>>({ ...(meta?.param_bindings ?? {}) });
   const defaultsRef = useRef<Record<string, number>>(
-    Object.fromEntries(Object.entries(modelParams).map(([k, def]) => [k, Number(def.min)]))
+    Object.fromEntries(Object.entries(modelParams).map(([k, def]) => [k, Number(def.min)])),
   );
 
   // старт: canon поверх дефолтов
-  const [params, setParams] = useState<Record<string, number>>(() => ({ ...defaultsRef.current, ...canonRef.current }));
+  const [params, setParams] = useState<Record<string, number>>(() => ({
+    ...defaultsRef.current,
+    ...canonRef.current,
+  }));
+
+  // sandbox и импорт/экспорт
+  const [ignoreLocks, setIgnoreLocks] = useState(false);
+  const importRef = useRef<HTMLInputElement | null>(null);
+  const onImportFile = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const js = JSON.parse(String(reader.result));
+        if (js && typeof js.params === "object") {
+          setParams((s) => ({ ...s, ...js.params }));
+        }
+      } catch {
+        // ignore
+      }
+    };
+    reader.readAsText(file);
+  }, []);
+  const exportSnapshot = useCallback(() => {
+    const data = JSON.stringify({ params }, null, 2);
+    const blob = new Blob([data], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const base = meta?.slug || meta?.title || "snapshot";
+    a.download = `${base}-params.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }, [params, meta]);
 
   // URL p=
   useEffect(() => {
@@ -228,7 +324,7 @@ export default function EntityPanel(props: Props) {
     place: computeObject,
     protocol: computeObject,
     event: computeObject,
-    document: computeObject
+    document: computeObject,
   };
   const SIM: Record<string, SimFn> = {
     object: simulateObject,
@@ -236,7 +332,7 @@ export default function EntityPanel(props: Props) {
     place: simulateObject,
     protocol: simulateObject,
     event: simulateObject,
-    document: simulateObject
+    document: simulateObject,
   };
   const compute = COMPUTE[tkey] || computeObject;
   const simulate = SIM[tkey] || simulateObject;
@@ -261,15 +357,24 @@ export default function EntityPanel(props: Props) {
   const [scenarioFocus, setScenarioFocus] = useState<string>("");
   const relevant = useMemo(
     () => (scenarioFocus ? new Set(scenarioRelevantParams(tkey, scenarioFocus)) : null),
-    [scenarioFocus, tkey]
+    [scenarioFocus, tkey],
   );
 
   const controls = useMemo(() => {
     const out: Array<{
-      k: string; min: number; max: number; step: number; val: number; hint?: string; doc?: string; label: string; disabled: boolean; highlighted: boolean;
+      k: string;
+      min: number;
+      max: number;
+      step: number;
+      val: number;
+      hint?: string;
+      doc?: string;
+      label: string;
+      disabled: boolean;
+      highlighted: boolean;
     }> = [];
     for (const [k, def] of Object.entries(modelParams)) {
-      const disabled = isLocked(k);
+      const disabled = !ignoreLocks && (lockedLocal.has(k) || !!(lockedGlobal?.[k]?.locked));
       if (showOnlyAdjustable && disabled) continue;
       out.push({
         k,
@@ -281,11 +386,11 @@ export default function EntityPanel(props: Props) {
         doc: docs[k],
         label: def.label || k,
         disabled,
-        highlighted: relevant ? relevant.has(k) : false
+        highlighted: relevant ? relevant.has(k) : false,
       });
     }
     return out;
-  }, [modelParams, params, hints, docs, showOnlyAdjustable, relevant]);
+  }, [modelParams, params, hints, docs, showOnlyAdjustable, relevant, ignoreLocks, lockedLocal, lockedGlobal]);
 
   // пояснение
   const explain = useMemo(() => {
@@ -299,7 +404,7 @@ export default function EntityPanel(props: Props) {
       return [
         `Influence ≈ (0.6·will + 0.6·competence + 0.4·resources)·(0.7 + 0.3·loyalty) = ${fmt(infl, 3)}`,
         `Pr[monstro] ↑ от stress и dark_exposure = ${fmt(mon, 3)}`,
-        `S = σ(α₁·Pv − α₂·Vσ − α₃·drift + α₄·topo).`
+        `S = σ(α₁·Pv − α₂·Vσ − α₃·drift + α₄·topo).`,
       ];
     }
     const A = Number(params["A*"] ?? params.A_star ?? 100);
@@ -308,7 +413,7 @@ export default function EntityPanel(props: Props) {
     return [
       `dose = E / A* = ${fmt(dose, 3)} (целевое ≈ 1)`,
       `Vσ ↑ от exergy_cost, infra_footprint, hazard_rate и ошибок дозы`,
-      `S = σ(1.2·Pv − 1.1·Vσ − 0.9·drift + 0.8·topo + 0.25·log(1+witness))`
+      `S = σ(1.2·Pv − 1.1·Vσ − 0.9·drift + 0.8·topo + 0.25·log(1+witness))`,
     ];
   }, [params, tkey]);
 
@@ -323,21 +428,21 @@ export default function EntityPanel(props: Props) {
   const [yKey, setYKey] = useState<string>(metricKeys[1] ?? "Vsigma");
 
   useEffect(() => {
-    // если ключи изменились после первого рендера
     if (!metricKeys.includes(xKey)) setXKey(metricKeys[0] ?? "Pv");
     if (!metricKeys.includes(yKey)) setYKey(metricKeys[1] ?? metricKeys[0] ?? "Vsigma");
-  }, [metricKeys]); // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [metricKeys]);
 
   const path = sim.map((p) => ({
     x: Number((p as any)[xKey] ?? 0),
-    y: Number((p as any)[yKey] ?? 0)
+    y: Number((p as any)[yKey] ?? 0),
   }));
   const point = { x: Number((metrics as any)[xKey] ?? 0), y: Number((metrics as any)[yKey] ?? 0) };
 
   // годность сценариев
   const eligibility = useMemo(
-    () => getEligibility(tkey, metrics as any, params, registry),
-    [tkey, metrics, params, registry]
+    () => getEligibility(tkey, metrics as any, params, registry) ?? [],
+    [tkey, metrics, params, registry],
   );
 
   // действия: сбросы и share
@@ -354,8 +459,14 @@ export default function EntityPanel(props: Props) {
   const share = useCallback(() => {
     if (!isBrowser) return;
     const url = window.location.href;
-    if (navigator?.clipboard?.writeText) navigator.clipboard.writeText(url);
+    navigator?.clipboard?.writeText?.(url);
   }, []);
+
+  // per-param reset
+  const makeResetCanonFor = (k: string) => () =>
+    setParams((s) => ({ ...s, [k]: canonRef.current[k] ?? s[k] }));
+  const makeResetDefaultFor = (k: string, defMin: number) => () =>
+    setParams((s) => ({ ...s, [k]: defMin }));
 
   /* ───────── render ───────── */
   return (
@@ -369,6 +480,15 @@ export default function EntityPanel(props: Props) {
             <button onClick={resetDefaults} title="Сбросить к дефолтам модели">Defaults</button>
             <button onClick={resetUrl} title="Очистить p= в URL">Clear URL</button>
             <button onClick={share} title="Копировать URL">Share</button>
+            <button onClick={exportSnapshot} title="Экспортировать параметры в JSON">Export</button>
+            <button onClick={() => importRef.current?.click()} title="Импортировать параметры из JSON">Import</button>
+            <input
+              ref={importRef}
+              type="file"
+              accept="application/json"
+              onChange={onImportFile}
+              style={{ display: "none" }}
+            />
           </div>
         </div>
 
@@ -384,6 +504,15 @@ export default function EntityPanel(props: Props) {
               onChange={(e) => setShowOnlyAdjustable(e.target.checked)}
             />
             только регулируемые
+          </label>
+
+          <label style={{ display: "inline-flex", gap: 6, alignItems: "center", fontSize: 12 }}>
+            <input
+              type="checkbox"
+              checked={ignoreLocks}
+              onChange={(e) => setIgnoreLocks(e.target.checked)}
+            />
+            sandbox (игнорировать замки)
           </label>
 
           <label style={{ display: "inline-flex", gap: 6, alignItems: "center", fontSize: 12 }}>
@@ -411,6 +540,8 @@ export default function EntityPanel(props: Props) {
             doc={c.doc}
             disabled={c.disabled}
             highlighted={c.highlighted}
+            onResetCanon={makeResetCanonFor(c.k)}
+            onResetDefault={makeResetDefaultFor(c.k, c.min)}
           />
         ))}
       </section>
