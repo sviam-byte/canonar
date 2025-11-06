@@ -1,43 +1,37 @@
-// src/components/EligibilityBadges.tsx
 import React from "react";
-import type { EligibilityReport } from "@/lib/eligibility";
+import type { EligibilityItem } from "@/lib/eligibility";
 
-function Chip({ ok, label, title }: { ok: boolean; label: string; title?: string }) {
+type Props = { items?: EligibilityItem[] | null; className?: string };
+
+export default function EligibilityBadges({ items, className }: Props) {
+  const safe: EligibilityItem[] = Array.isArray(items) ? items : [];
+  if (safe.length === 0) return null;
+
   return (
-    <span
-      title={title}
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 6,
-        padding: "4px 8px",
-        borderRadius: 999,
-        fontSize: 12,
-        border: `1px solid ${ok ? "#296d2d" : "#7a2b2b"}`,
-        color: ok ? "#9fe3a1" : "#ffb3b3",
-        background: ok ? "rgba(41,109,45,.12)" : "rgba(122,43,43,.12)"
-      }}
+    <div
+      className={typeof className === "string" ? className : undefined}
+      style={{ display: "flex", flexWrap: "wrap", gap: 8 }}
     >
-      <span style={{ width: 8, height: 8, borderRadius: 999, background: ok ? "#3fcf5a" : "#ff5c5c" }} />
-      {label}
-    </span>
-  );
-}
-
-export default function EligibilityBadges({ items }: { items: EligibilityReport[] }) {
-  const label = (k: string) =>
-    k === "negotiation"
-      ? "Переговоры"
-      : k === "repair_nomonstr"
-      ? "Ремонт без монстра"
-      : k === "incident_localize"
-      ? "Локализация инцидента"
-      : k;
-
-  return (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-      {items.map((r) => (
-        <Chip key={r.key} ok={r.ok} label={label(r.key)} title={r.reasons.join("; ")} />
+      {safe.map((it) => (
+        <div
+          key={it.key || `${it.label}-${Math.random().toString(36).slice(2)}`}
+          title={it.why || ""}
+          style={{
+            display: "inline-flex",
+            gap: 8,
+            alignItems: "center",
+            border: "1px solid var(--muted, #3d3d3d)",
+            borderRadius: 8,
+            padding: "6px 10px",
+            background: it.ok ? "rgba(60,180,90,0.08)" : "rgba(180,60,60,0.08)"
+          }}
+        >
+          <strong style={{ fontSize: 12 }}>{it.label ?? "—"}</strong>
+          <span style={{ fontSize: 12, opacity: 0.8 }}>{it.ok ? "ok" : "fail"}</span>
+          <span style={{ fontSize: 12, opacity: 0.6 }}>
+            {Number.isFinite(it.score) ? Math.round(it.score * 100) + "%" : "—"}
+          </span>
+        </div>
       ))}
     </div>
   );
