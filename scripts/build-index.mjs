@@ -10,16 +10,17 @@ const ERA_DIRS = new Set(["current", "pre-rector", "pre-borders"]);
 
 const ensureDir = async (p) => mkdir(p, { recursive: true });
 
-const walkMetaFiles = async (dir) => {
+const walkFiles = async (dir, pred) => {
   const out = [];
   const ents = await readdir(dir, { withFileTypes: true });
   for (const e of ents) {
     const p = join(dir, e.name);
-    if (e.isDirectory()) out.push(...(await walkMetaFiles(p)));
-    else if (e.isFile() && e.name.endsWith(".meta.json")) out.push(p);
+    if (e.isDirectory()) out.push(...(await walkFiles(p, pred)));
+    else if (e.isFile() && pred(e.name)) out.push(p);
   }
   return out;
 };
+const walkMetaFiles = (dir) => walkFiles(dir, (n) => n.endsWith(".meta.json"));
 
 const translitRu = (s) =>
   s.replace(/[А-ЯЁ]/g, (c) => c.toLowerCase()).replace(/[а-яё]/g, (c) => {
@@ -44,8 +45,8 @@ const slugify = (s) => {
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "");
 };
-
 const singular = (t) => (t.endsWith("s") ? t.slice(0, -1) : t);
+const sha1 = (s) => createHash("sha1").update(String(s)).digest("hex");
 
 const branchAndTypeFromPath = (absFile) => {
   const rel = relative(CONTENT, absFile).split(sep);
@@ -56,7 +57,6 @@ const branchAndTypeFromPath = (absFile) => {
 };
 
 const canonicalBranch = (rawEra, fallback) => (ERA_DIRS.has(rawEra) ? rawEra : fallback);
-const sha1 = (s) => createHash("sha1").update(String(s)).digest("hex");
 
 const normalizeAuthors = (authors) =>
   Array.isArray(authors)
@@ -66,7 +66,7 @@ const normalizeAuthors = (authors) =>
     : [];
 
 const ensureUniqueSlugFactory = () => {
-  const perScope = new Map();
+  const perScope = new Map(); // key = branch/type -> Map(slug->count)
   return (branch, type, slug) => {
     const scope = `${branch}/${type}`;
     if (!perScope.has(scope)) perScope.set(scope, new Map());
@@ -90,7 +90,11 @@ const safeReadJSON = async (file) => {
 };
 
 const main = async () => {
+  // 1) registry → копируем как есть в public/src и вытащим map-конфиг
   const registryPath = join(CONTENT, "registry.json");
+  const registry = await safeReadJSON(registryPath);
+
+  // 2) читаем все исходные meta
   const metaFiles = await walkMetaFiles(CONTENT);
   const dedupeSlug = ensureUniqueSlugFactory();
 
@@ -101,7 +105,7 @@ const main = async () => {
     const raw = await safeReadJSON(f);
     const fromPath = branchAndTypeFromPath(f);
     const branch = canonicalBranch(raw.era, fromPath.branch);
-    const type = fromPath.type;
+    const type = fromPath.type; // plural route segment
 
     const baseSlug = raw.slug || raw.id || raw.name || raw.title || f;
     let slug = slugify(baseSlug);
@@ -113,7 +117,7 @@ const main = async () => {
 
     const meta = {
       entity_id,
-      type: singular(type),
+      type: singular(raw.type || type),          // предпочитаем явно указанное
       slug,
       title: raw.name || raw.title || slug,
       subtitle: raw.title && raw.name ? raw.title : raw.subtitle || "",
@@ -129,6 +133,10 @@ const main = async () => {
       },
       model_ref: raw.model_ref || singular(type),
       param_bindings: raw.param_bindings || {},
+      param_hints: raw.param_hints || {},
+      param_docs: raw.param_docs || {},
+      param_locked: Array.isArray(raw.param_locked) ? raw.param_locked : [],
+      coords: raw.coords || null,
       notes: raw.notes || "",
       changelog: Array.isArray(raw.changelog) ? raw.changelog : []
     };
@@ -140,6 +148,7 @@ const main = async () => {
     entries.push({ branch, type, meta });
   }
 
+  // 3) стабильная сортировка
   entries.sort((a, b) =>
     a.branch === b.branch
       ? a.type === b.type
@@ -148,6 +157,7 @@ const main = async () => {
       : a.branch.localeCompare(b.branch, "en")
   );
 
+  // 4) ветки -> типы
   const branchesMap = new Map();
   for (const e of entries) {
     if (!branchesMap.has(e.branch)) branchesMap.set(e.branch, new Set());
@@ -165,14 +175,17 @@ const main = async () => {
     entries
   };
 
+  // 5) вывод в public/src
   await ensureDir(PUBLIC);
   await ensureDir(SRC_DATA);
   await ensureDir(join(PUBLIC, "models"));
   await ensureDir(join(SRC_DATA, "models"));
 
+  // главный индекс
   await writeFile(join(PUBLIC, "index.json"), JSON.stringify(indexObj, null, 2), "utf8");
   await writeFile(join(SRC_DATA, "index.json"), JSON.stringify(indexObj, null, 2), "utf8");
 
+  // списки, карты slug->id, per-entity meta
   for (const { name: branch } of branches) {
     const types = branchesMap.get(branch);
     for (const t of types) {
@@ -201,11 +214,32 @@ const main = async () => {
     }
   }
 
+  // registry.json → public/src
   try {
     await cp(join(CONTENT, "registry.json"), join(PUBLIC, "models", "registry.json"));
     await cp(join(CONTENT, "registry.json"), join(SRC_DATA, "models", "registry.json"));
   } catch (e) {
-    warnings.push(`[index] cannot copy registry.json: ${e.message}`);
+    console.warn(`[index] cannot copy registry.json: ${e.message}`);
+  }
+
+  // map config быстрым дублированием (для простого импорта на клиенте)
+  const mapCfg = registry.map || {};
+  await ensureDir(join(SRC_DATA, "map"));
+  await ensureDir(join(PUBLIC, "map"));
+  await writeFile(join(SRC_DATA, "map", "config.json"), JSON.stringify(mapCfg, null, 2), "utf8");
+  await writeFile(join(PUBLIC, "map", "config.json"), JSON.stringify(mapCfg, null, 2), "utf8");
+
+  // предупреждения
+  // быстрая проверка: заблокированные параметры существуют в модели
+  const modelDefs = registry.models || {};
+  for (const e of entries) {
+    const defs = modelDefs[e.meta.model_ref] || modelDefs[e.meta.type] || {};
+    const params = defs.params || {};
+    for (const lk of e.meta.param_locked || []) {
+      if (!(lk in params)) {
+        warnings.push(`[index] ${e.meta.slug}: locked "${lk}" not found in model "${e.meta.model_ref}"`);
+      }
+    }
   }
 
   if (warnings.length) warnings.forEach((w) => console.warn(w));
