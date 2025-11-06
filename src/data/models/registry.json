@@ -2,64 +2,96 @@
   "models": {
     "object": {
       "params": {
-        "A*": { "min": 10, "max": 500, "step": 10 },
-        "E":  { "min": 0,  "max": 800, "step": 5 },
-        "q":  { "min": 0,  "max": 1,   "step": 0.05 },
-        "rho":{ "min": 0.8,"max": 0.999,"step": 0.001 },
-        "exergy_cost":   { "min": 0, "max": 1, "step": 0.05 },
-        "infra_footprint":{ "min": 0, "max": 1, "step": 0.05 },
-        "hazard_rate":   { "min": 0, "max": 1, "step": 0.02 },
-        "topo_class":    { "min": 0, "max": 1, "step": 0.05 },
-        "witness_count": { "min": 0, "max": 500, "step": 1 },
-        "causal_penalty":{ "min": 0, "max": 2, "step": 0.05 },
-        "dark_flag":     { "min": 0, "max": 1, "step": 1 },
-        "cvar_alpha":    { "min": 0.01, "max": 0.2, "step": 0.01 }
+        "A*":            { "min": 10,   "max": 500,   "step": 10,   "label": "capacity A*" },
+        "E":             { "min": 0,    "max": 800,   "step": 5,    "label": "exposure E" },
+        "q":             { "min": 0,    "max": 1,     "step": 0.05, "label": "quality q" },
+        "rho":           { "min": 0.8,  "max": 0.999, "step": 0.001,"label": "persistence ρ" },
+        "exergy_cost":   { "min": 0,    "max": 1,     "step": 0.05, "label": "exergy cost" },
+        "infra_footprint":{ "min": 0,   "max": 1,     "step": 0.05, "label": "infra footprint" },
+        "hazard_rate":   { "min": 0,    "max": 1,     "step": 0.02, "label": "hazard rate" },
+        "topo":          { "min": 0,    "max": 1,     "step": 0.05, "label": "topology class" },
+        "witness_count": { "min": 0,    "max": 500,   "step": 1,    "label": "witnesses" },
+        "causal_penalty":{ "min": 0,    "max": 2,     "step": 0.05, "label": "causal penalty" },
+        "dark_flag":     { "min": 0,    "max": 1,     "step": 1,    "label": "dark flag" },
+        "cvar_alpha":    { "min": 0.01, "max": 0.2,   "step": 0.01, "label": "CVaR α" }
       }
     },
     "character": {
       "params": {
-        "will": { "min": 0, "max": 1, "step": 0.02 },
-        "loyalty": { "min": 0, "max": 1, "step": 0.02 },
-        "stress": { "min": 0, "max": 1, "step": 0.02 },
-        "resources": { "min": 0, "max": 1, "step": 0.02 },
-        "competence": { "min": 0, "max": 1, "step": 0.02 },
-        "risk_tolerance": { "min": 0, "max": 1, "step": 0.02 },
-        "mandate_power": { "min": 0, "max": 1, "step": 0.02 },
-        "dark_exposure": { "min": 0, "max": 1, "step": 0.02 }
+        "will":            { "min": 0, "max": 1, "step": 0.02, "label": "will" },
+        "loyalty":         { "min": 0, "max": 1, "step": 0.02, "label": "loyalty" },
+        "stress":          { "min": 0, "max": 1, "step": 0.02, "label": "stress" },
+        "resources":       { "min": 0, "max": 1, "step": 0.02, "label": "resources" },
+        "competence":      { "min": 0, "max": 1, "step": 0.02, "label": "competence" },
+        "risk_tolerance":  { "min": 0, "max": 1, "step": 0.02, "label": "risk tolerance" },
+        "mandate_power":   { "min": 0, "max": 1, "step": 0.02, "label": "mandate power" },
+        "dark_exposure":   { "min": 0, "max": 1, "step": 0.02, "label": "dark exposure" }
       }
     },
     "place": {
       "params": {
-        "load_factor": { "min": 0, "max": 2, "step": 0.05 },
-        "O2_margin": { "min": -0.2, "max": 0.5, "step": 0.01 },
-        "traffic": { "min": 0, "max": 1, "step": 0.02 },
-        "maintenance_rate": { "min": 0, "max": 1, "step": 0.02 },
-        "shock_freq": { "min": 0, "max": 0.5, "step": 0.01 }
+        "load_factor":     { "min": 0,   "max": 2,   "step": 0.05, "label": "load factor" },
+        "O2_margin":       { "min": -0.2,"max": 0.5, "step": 0.01, "label": "O₂ margin" },
+        "traffic":         { "min": 0,   "max": 1,   "step": 0.02, "label": "traffic" },
+        "maintenance_rate":{ "min": 0,   "max": 1,   "step": 0.02, "label": "maintenance" },
+        "shock_freq":      { "min": 0,   "max": 0.5, "step": 0.01, "label": "shock freq" }
       }
     },
     "protocol": {
       "params": {
-        "scope": { "min": 0, "max": 1, "step": 0.02 },
-        "strictness": { "min": 0, "max": 1, "step": 0.02 },
-        "cost": { "min": 0, "max": 1, "step": 0.02 },
-        "reversibility": { "min": 0, "max": 1, "step": 0.02 },
-        "human_cost": { "min": 0, "max": 1, "step": 0.02 }
+        "scope":         { "min": 0, "max": 1, "step": 0.02, "label": "scope" },
+        "strictness":    { "min": 0, "max": 1, "step": 0.02, "label": "strictness" },
+        "cost":          { "min": 0, "max": 1, "step": 0.02, "label": "cost" },
+        "reversibility": { "min": 0, "max": 1, "step": 0.02, "label": "reversibility" },
+        "human_cost":    { "min": 0, "max": 1, "step": 0.02, "label": "human cost" }
       }
     },
     "event": {
       "params": {
-        "evidence_level": { "min": 0, "max": 1, "step": 0.02 },
-        "casualties": { "min": 0, "max": 10000, "step": 10 },
-        "resource_burn": { "min": 0, "max": 1, "step": 0.02 },
-        "policy_impact": { "min": 0, "max": 1, "step": 0.02 }
+        "evidence_level": { "min": 0, "max": 1,     "step": 0.02, "label": "evidence" },
+        "casualties":     { "min": 0, "max": 10000, "step": 10,   "label": "casualties" },
+        "resource_burn":  { "min": 0, "max": 1,     "step": 0.02, "label": "resource burn" },
+        "policy_impact":  { "min": 0, "max": 1,     "step": 0.02, "label": "policy impact" }
       }
     },
     "document": {
       "params": {
-        "credibility": { "min": 0, "max": 1, "step": 0.02 },
-        "novelty": { "min": 0, "max": 1, "step": 0.02 },
-        "bias": { "min": 0, "max": 1, "step": 0.02 }
+        "credibility": { "min": 0, "max": 1, "step": 0.02, "label": "credibility" },
+        "novelty":     { "min": 0, "max": 1, "step": 0.02, "label": "novelty" },
+        "bias":        { "min": 0, "max": 1, "step": 0.02, "label": "bias" }
+      }
+    },
+    "hybrid": {
+      "extends": "object",
+      "params": {
+        "agency": { "min": 0, "max": 1, "step": 0.01, "label": "agency" }
       }
     }
+  },
+
+  "locks": {
+    "character": {
+      "identity": { "locked": true, "reason": "canon_identity" },
+      "oath":     { "locked": true, "reason": "vow" }
+    },
+    "object": {
+      "ex_nihilo": { "locked": true, "reason": "lor_constraint" }
+    }
+  },
+
+  "eligibility": {
+    "negotiation":       { "corridor_min": 0.6, "visibility": true },
+    "repair_nomonstr":   { "bootstrap_min": 0.55, "monstro_pr_max": 0.35 },
+    "incident_localize": { "localize_min": 0.6 }
+  },
+
+  "map": {
+    "crs": "Simple",
+    "bounds": [[0, 0], [2000, 1200]],
+    "tiles": "/maps/base.png"
+  },
+
+  "thresholds": {
+    "monstro": 0.5
   }
 }
