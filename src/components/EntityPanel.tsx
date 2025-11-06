@@ -1,40 +1,46 @@
-// src/components/EntityPanel.tsx
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import type { RegistryT } from "@/lib/models";
 import { computeCharacter, computeObject } from "@/lib/models";
 
+type ViewTypePlural =
+  | "characters"
+  | "objects"
+  | "places"
+  | "protocols"
+  | "events"
+  | "documents"
+  // допускаем новые типы без правок:
+  | (string & {});
+
 type Props = {
   branch: string;
-  meta: any;           // { title?, name?, type?, param_bindings?, param_hints?, param_docs?, bio?, subtitle? }
-  registry: RegistryT; // { models: { object:{params}, character:{params} } }
+  viewType: ViewTypePlural;   // plural из маршрута
+  meta: any;                  // per-entity meta/*.meta.json
+  registry: RegistryT;        // registry.json
 };
 
-// --- utils -----------------------------------------------------------------
+// ── utils ───────────────────────────────────────────────────────────────────
 const isBrowser = typeof window !== "undefined";
 const clamp = (x: number, min: number, max: number) => Math.min(max, Math.max(min, x));
-const fmt = (x: number, d = 3) => (Number.isFinite(x) ? x.toFixed(d) : "—");
-const singularize = (t?: string) => {
-  if (!t) return "object";
-  const s = String(t).toLowerCase();
-  return s.endsWith("s") ? s.slice(0, -1) : s;
-};
+const fmt = (x: number, d = 3) => (Number.isFinite(x) ? Number(x).toFixed(d) : "—");
+const singular = (t: string) => (t.endsWith("s") ? t.slice(0, -1) : t);
 
-function enc(o: unknown): string {
+const enc = (o: unknown) => {
   try {
     return btoa(unescape(encodeURIComponent(JSON.stringify(o))));
   } catch {
     return "";
   }
-}
-function dec<T = unknown>(s: string | null): T | null {
+};
+const dec = <T,>(s: string | null): T | null => {
   try {
     return s ? (JSON.parse(decodeURIComponent(escape(atob(s)))) as T) : null;
   } catch {
     return null;
   }
-}
+};
 
-// --- tiny UI atoms ----------------------------------------------------------
+// ── tiny UI ─────────────────────────────────────────────────────────────────
 function Row({ children }: { children: React.ReactNode }) {
   return <div style={{ display: "flex", gap: 12, alignItems: "center" }}>{children}</div>;
 }
@@ -113,17 +119,23 @@ function LabeledRange(props: {
   );
 }
 
-// --- main -------------------------------------------------------------------
-export default function EntityPanel({ branch, meta, registry }: Props) {
-  const tkey = singularize(meta?.type ?? "object");
-  const model = registry?.models?.[tkey] ?? registry?.models?.object;
+// ── main ────────────────────────────────────────────────────────────────────
+export default function EntityPanel({ branch, viewType, meta, registry }: Props) {
+  // тип берём из маршрута, а не угадываем по meta
+  const tkey = singular(String(viewType || meta?.type || "objects")); // 'character' | 'object' | ...
+  const modelKey = meta?.model_ref || tkey;
 
-  // стартовые значения: meta.param_bindings, затем дефолты из реестра
+  // параметры из registry для данного типа/модели
+  const modelParams: Record<
+    string,
+    { min: number; max: number; step?: number; label?: string }
+  > = registry?.models?.[modelKey]?.params ?? registry?.models?.object?.params ?? {};
+
+  // стартовые значения: meta.param_bindings → дефолты из реестра
   const [params, setParams] = useState<Record<string, number>>(() => {
     const base: Record<string, number> = { ...(meta?.param_bindings ?? {}) };
-    const defs = model?.params ?? {};
-    for (const [k, def] of Object.entries(defs)) {
-      if (base[k] == null) base[k] = def.min;
+    for (const [k, def] of Object.entries(modelParams)) {
+      if (base[k] == null) base[k] = Number(def.min);
     }
     return base;
   });
@@ -145,16 +157,28 @@ export default function EntityPanel({ branch, meta, registry }: Props) {
     window.history.replaceState(null, "", url);
   }, [params]);
 
+  // вычислители по типу: новые типы → fallback к object
+  type ComputeFn = (m: any, r: any, b: string) => any;
+  const COMPUTE: Record<string, ComputeFn> = {
+    object: computeObject,
+    character: computeCharacter,
+    place: computeObject,
+    protocol: computeObject,
+    event: computeObject,
+    document: computeObject
+  };
+  const compute = COMPUTE[tkey] || computeObject;
+
   // пересчёт метрик
   const metrics = useMemo(() => {
-    const augmented = { ...meta, param_bindings: params, type: tkey };
-    return tkey === "character"
-      ? computeCharacter(augmented, registry, branch)
-      : computeObject(augmented, registry, branch);
+    const augmented = { ...meta, type: tkey, param_bindings: params };
+    return compute(augmented, registry, branch);
   }, [branch, meta, params, registry, tkey]);
 
-  // набор контролов из реестра + хинты/доки из meta
+  // контролы: метки из registry.label если есть, хинты/доки из meta
   const controls = useMemo(() => {
+    const hints = (meta?.param_hints ?? {}) as Record<string, string>;
+    const docs = (meta?.param_docs ?? {}) as Record<string, string>;
     const out: Array<{
       k: string;
       min: number;
@@ -165,24 +189,22 @@ export default function EntityPanel({ branch, meta, registry }: Props) {
       doc?: string;
       label: string;
     }> = [];
-    const hints = (meta?.param_hints as Record<string, string>) ?? {};
-    const docs = (meta?.param_docs as Record<string, string>) ?? {};
-    const p = model?.params ?? {};
-    for (const [k, def] of Object.entries(p)) {
+    for (const [k, def] of Object.entries(modelParams)) {
       out.push({
         k,
-        min: def.min,
-        max: def.max,
-        step: def.step ?? 1,
+        min: Number(def.min),
+        max: Number(def.max),
+        step: Number(def.step ?? 1),
         val: Number(params[k] ?? def.min),
         hint: hints[k],
         doc: docs[k],
-        label: k
+        label: def.label || k
       });
     }
     return out;
-  }, [meta, model?.params, params]);
+  }, [meta, modelParams, params]);
 
+  // краткие объяснения по типам
   const explain = useMemo(() => {
     if (tkey === "character") {
       const will = Number(params.will ?? 0.5);
@@ -192,42 +214,42 @@ export default function EntityPanel({ branch, meta, registry }: Props) {
       const stress = Number(params.stress ?? 0.3);
       const infl = (will * 0.6 + comp * 0.6 + res * 0.4) * (0.7 + 0.3 * loy);
       return [
-        `Влияние ≈ (0.6·will + 0.6·competence + 0.4·resources)·(0.7 + 0.3·loyalty) = ${fmt(infl, 3)}`,
-        `Pv растёт с влиянием и падает при высоком stress.`,
-        `Vσ растёт от stress и risk_tolerance.`,
-        `S = σ(1.1·Pv − 1.0·Vσ − 0.8·drift + 0.7·topo).`
+        `Influence ≈ (0.6·will + 0.6·competence + 0.4·resources)·(0.7 + 0.3·loyalty) = ${fmt(infl, 3)}`,
+        `Pv ↑ c influence, Pv ↓ при высоком stress.`,
+        `Vσ ↑ от stress и risk_tolerance.`,
+        `S = σ(α₁·Pv − α₂·Vσ − α₃·drift + α₄·topo).`
       ];
     }
-    const A = Number(params.A_star ?? params["A*"] ?? 100);
-    const E = Number(params.E0 ?? params.E ?? 0);
+    const A = Number(params["A*"] ?? params.A_star ?? 100);
+    const E = Number(params.E ?? params.E0 ?? 0);
     const dose = A ? E / A : 0;
     const risk_dry = Math.max(0, E - A) ** 2 * 0.001;
     const risk_decay = Math.max(0, A - E) * 0.002;
     return [
-      `dose = E / A* = ${fmt(dose, 3)}. Цель — около 1.`,
+      `dose = E / A* = ${fmt(dose, 3)}. Цель ~ 1.`,
       `Переэкспозиция: risk_dry = max(0, E − A*)² · 0.001 = ${fmt(risk_dry, 4)}.`,
       `Недокорм: risk_decay = max(0, A* − E) · 0.002 = ${fmt(risk_decay, 4)}.`,
-      `Pv ↑ с q и числом свидетелей; Vσ ↑ от exergy_cost, infra_footprint, hazard_rate и ошибок дозы.`,
-      `S = σ(1.2·Pv − 1.1·Vσ − 0.9·drift + 0.8·topo).`
+      `Pv ↑ с q и свидетелями; Vσ ↑ от exergy_cost, infra_footprint, hazard_rate и ошибок дозы.`,
+      `S = σ(α₁·Pv − α₂·Vσ − α₃·drift + α₄·topo).`
     ];
   }, [params, tkey]);
 
   const reset = useCallback(() => {
     const base: Record<string, number> = {};
-    const defs = model?.params ?? {};
-    for (const [k, def] of Object.entries(defs)) base[k] = def.min;
+    for (const [k, def] of Object.entries(modelParams)) base[k] = Number(def.min);
     setParams(base);
-  }, [model?.params]);
+  }, [modelParams]);
 
   const share = useCallback(() => {
     if (!isBrowser) return;
-    if (navigator?.clipboard?.writeText) navigator.clipboard.writeText(window.location.href);
+    const url = window.location.href;
+    if (navigator?.clipboard?.writeText) navigator.clipboard.writeText(url);
   }, []);
 
-  if (!model?.params) {
+  if (!modelParams || Object.keys(modelParams).length === 0) {
     return (
       <div style={{ padding: 16, border: "1px solid #a33", borderRadius: 8, color: "#faa" }}>
-        Нет параметров для типа <code>{tkey}</code>. Проверь <code>src/data/models/registry.json</code>.
+        Нет параметров для модели <code>{modelKey}</code>. Проверь <code>src/data/models/registry.json</code>.
       </div>
     );
   }
@@ -244,7 +266,7 @@ export default function EntityPanel({ branch, meta, registry }: Props) {
           </div>
         </div>
         <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 8 }}>
-          Ветка: <code>{branch}</code> • Тип: <code>{tkey}</code>
+          Ветка: <code>{branch}</code> • Тип: <code>{tkey}</code> • Модель: <code>{modelKey}</code>
         </div>
 
         {controls.map((c) => (
@@ -263,15 +285,37 @@ export default function EntityPanel({ branch, meta, registry }: Props) {
         ))}
       </section>
 
-      {/* правая колонка: метрики + объяснения + био */}
+      {/* правая колонка: метрики + объяснения + спец-бейджи */}
       <section>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
-          <Badge label="Pv" value={metrics.Pv} hint="Предсказательная ценность" />
-          <Badge label="Vσ" value={metrics.Vsigma} hint="Онтологический долг" />
-          <Badge label="S" value={metrics.S} hint="Стабильность формы" />
-          <Badge label="dose" value={metrics.dose} hint="Отношение E/A*" />
-          <Badge label="drift" value={metrics.drift} hint="Дрейф при неверной дозе" />
-          <Badge label="topo" value={metrics.topo} hint="Топологическая защита/память" />
+          <Badge label="Pv" value={metrics?.Pv} hint="Предсказательная ценность" />
+          <Badge label="Vσ" value={metrics?.Vsigma} hint="Онтологический долг" />
+          <Badge label="S" value={metrics?.S} hint="Стабильность формы" />
+          {"dose" in (metrics ?? {}) && <Badge label="dose" value={(metrics as any).dose} hint="Отношение E/A*" />}
+          {"drift" in (metrics ?? {}) && <Badge label="drift" value={(metrics as any).drift} hint="Дрейф" />}
+          {"topo" in (metrics ?? {}) && <Badge label="topo" value={(metrics as any).topo} hint="Топологическая защита" />}
+
+          {tkey === "character" && (
+            <>
+              {"influence" in (metrics ?? {}) && (
+                <Badge label="Influence" value={(metrics as any).influence} hint="Центральность влияния" />
+              )}
+              {"monstro_pr" in (metrics ?? {}) && (
+                <Badge label="Pr[monstro]" value={(metrics as any).monstro_pr} hint="Риск монструозности" />
+              )}
+            </>
+          )}
+
+          {tkey === "object" && (
+            <>
+              {"risk_dry" in (metrics ?? {}) && (
+                <Badge label="risk_dry" value={(metrics as any).risk_dry} hint="Штраф переэкспозиции" />
+              )}
+              {"risk_decay" in (metrics ?? {}) && (
+                <Badge label="risk_decay" value={(metrics as any).risk_decay} hint="Штраф недокорма" />
+              )}
+            </>
+          )}
         </div>
 
         <div style={{ padding: 12, border: "1px solid var(--muted, #3d3d3d)", borderRadius: 8 }}>
