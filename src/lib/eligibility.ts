@@ -1,222 +1,324 @@
 // src/lib/eligibility.ts
+import type { RegistryT } from "./models";
 
+/* ── тип ── */
 export type EligibilityItem = {
-  key: string;          // machine id
-  label: string;        // human label
-  ok: boolean;          // pass/fail by thresholds
-  score: number;        // 0..1 aggregate
-  why: string;          // short explanation
+  key: string;
+  label: string;
+  ok: boolean;
+  score: number;
+  why: string;
 };
 
+/* ── утилиты ── */
 const clamp = (x: number, a = 0, b = 1) => Math.min(b, Math.max(a, x));
 const num = (v: unknown, d = 0) => (typeof v === "number" && Number.isFinite(v) ? v : d);
+const log1p = (x: number) => Math.log(1 + Math.max(-0.999999, x));
 
-// pick metric with param fallback
-function pick(
-  metrics: Record<string, unknown>,
-  params: Record<string, unknown>,
-  keys: string[],
-  def = 0
-) {
-  for (const k of keys) {
-    const mv = (metrics as any)?.[k];
-    if (typeof mv === "number") return mv;
-    const pv = (params as any)?.[k];
-    if (typeof pv === "number") return pv;
-  }
-  return def;
-}
-
-// simple aggregator to 0..1
-function zOriented(x: number, target: number, tol: number) {
-  // 1 at |x-target|=0, falls to 0 at |x-target|>=tol
+const zOriented = (x: number, target: number, tol: number) => {
   const d = Math.abs(x - target);
   return clamp(1 - d / Math.max(tol, 1e-9));
-}
-function preferHigh(x: number, knee = 0.6) {
-  return clamp((x - knee) / Math.max(1 - knee, 1e-9));
-}
-function preferLow(x: number, knee = 0.4) {
-  return clamp((knee - x) / Math.max(knee, 1e-9));
-}
+};
+const preferHigh = (x: number, knee = 0.6) => clamp((x - knee) / Math.max(1 - knee, 1e-9));
+const preferLow = (x: number, knee = 0.4) => clamp((knee - x) / Math.max(knee, 1e-9));
 
+/* ── сценарные подсказки для подсветки слайдеров ── */
 export function scenarioRelevantParams(tkey: string, scenario: string): string[] {
   const c = (arr: string[]) => arr;
+  const commonObj = {
+    negotiation: ["witness_count", "topo", "q", "causal_penalty"],
+    repair_nomonstr: ["E", "A*", "hazard_rate", "exergy_cost", "infra_footprint", "cvar_alpha"],
+    incident_localize: ["topo", "rho", "causal_penalty", "hazard_rate"],
+    evac_corridor: ["Pv", "S", "drift", "topo", "witness_count"],
+    trade_treaty: ["credibility", "bias", "novelty", "q", "topo"],
+    stealth_surface: ["hazard_rate", "rho", "cvar_alpha"],
+    containment: ["hazard_rate", "exergy_cost", "infra_footprint", "A*", "E"],
+    o2_surplus_route: ["O2_margin", "load_factor", "shock_freq"],
+    budget_ok: ["exergy_cost", "infra_footprint"],
+    evidence_publish: ["credibility", "bias", "novelty"],
+    rollback_safe: ["reversibility", "Vsigma"],
+    quarantine_needed: ["hazard_rate", "drift", "Vsigma"],
+  } as Record<string, string[]>;
+
   if (tkey === "character") {
-    switch (scenario) {
-      case "negotiation":
-        return c(["will", "competence", "resources", "loyalty", "stress", "risk_tolerance"]);
-      case "repair_nomonstr":
-        return c(["stress", "risk_tolerance", "mandate_power", "resources", "topo", "dark_exposure"]);
-      case "incident_localize":
-        return c(["topo", "resources", "mandate_power", "competence", "risk_tolerance"]);
-      default:
-        return [];
-    }
+    const char = {
+      negotiation: ["will", "competence", "resources", "loyalty", "stress", "risk_tolerance"],
+      repair_nomonstr: ["stress", "risk_tolerance", "mandate_power", "resources", "topo", "dark_exposure"],
+      incident_localize: ["topo", "resources", "mandate_power", "competence", "risk_tolerance"],
+      evac_corridor: ["will", "competence", "resources", "topo"],
+      trade_treaty: ["competence", "will", "loyalty", "bias", "credibility"],
+      stealth_surface: ["dark_exposure", "stress", "risk_tolerance"],
+      containment: ["risk_tolerance", "stress", "dark_exposure"],
+    } as Record<string, string[]>;
+    return char[scenario] ?? [];
   }
-  // object | place | protocol | event | document → по умолчанию объектные
-  switch (scenario) {
-    case "negotiation":
-      return c(["witness_count", "topo", "q", "causal_penalty"]);
-    case "repair_nomonstr":
-      return c(["E", "A*", "hazard_rate", "exergy_cost", "infra_footprint", "cvar_alpha"]);
-    case "incident_localize":
-      return c(["topo", "rho", "causal_penalty", "hazard_rate"]);
-    default:
-      return [];
-  }
+  return commonObj[scenario] ?? [];
 }
 
+/* ── конфиги порогов из registry ── */
+function cfg(reg: RegistryT | undefined, key: string) {
+  return ((reg?.eligibility || {}) as any)[key] ?? {};
+}
+
+/* ── API ── */
 export function getEligibility(
   tkey: string,
   metricsIn: Record<string, unknown>,
   paramsIn: Record<string, unknown>,
-  _registry?: unknown
+  registry?: RegistryT
 ): EligibilityItem[] {
   const m = (k: string, d = 0) => num((metricsIn as any)?.[k], d);
   const p = (k: string, d = 0) => num((paramsIn as any)?.[k], d);
 
-  // derived/fallbacks
-  const Pv      = m("Pv");
-  const Vsigma  = m("Vsigma");
-  const S       = m("S");
-  const drift   = m("drift");
-  const topo    = m("topo", p("topo", p("topo_class", 0)));
-  const dose    = m("dose", (() => {
-    const A = p("A*", p("A_star", 0)) || 0;
-    const E = p("E", p("E0", 0)) || 0;
-    return A > 0 ? E / A : 0;
-  })());
+  // derived
+  const Pv = m("Pv");
+  const Vsigma = m("Vsigma");
+  const S = m("S");
+  const drift = m("drift");
+  const topo = m("topo", p("topo", p("topo_class", 0)));
+  const dose = m(
+    "dose",
+    (() => {
+      const A = p("A*", p("A_star", 0)) || 0;
+      const E = p("E", p("E0", 0)) || 0;
+      return A > 0 ? E / A : 0;
+    })()
+  );
+  const witness = m("witness", p("witness_count", 0));
 
-  // character extras
-  const stress       = p("stress", 0.3);
-  const darkExposure = p("dark_exposure", 0.2);
-  const will         = p("will", 0.5);
-  const competence   = p("competence", 0.5);
-  const resources    = p("resources", 0.5);
-  const loyalty      = p("loyalty", 0.5);
-  const influence    = m("influence", (will * 0.6 + competence * 0.6 + resources * 0.4) * (0.7 + 0.3 * loyalty));
-  const monstro_pr   = m("monstro_pr", clamp(0.6 * stress + 0.4 * darkExposure));
+  // character
+  const stress = p("stress", 0.3);
+  const dark = p("dark_exposure", 0.2);
+  const will = p("will", 0.5);
+  const competence = p("competence", 0.5);
+  const resources = p("resources", 0.5);
+  const loyalty = p("loyalty", 0.5);
+  const influence = m(
+    "influence",
+    (0.6 * will + 0.6 * competence + 0.4 * resources) * (0.7 + 0.3 * loyalty)
+  );
+  const monstro = m("monstro_pr", clamp(0.6 * stress + 0.4 * dark));
 
-  // object extras
-  const hazard_rate    = p("hazard_rate", 0.0);
-  const exergy_cost    = p("exergy_cost", 0.0);
-  const infra_footprint= p("infra_footprint", 0.0);
-  const witness_count  = p("witness_count", 0);
-  const q              = p("q", 0.0);
+  // object-like
+  const hazard = p("hazard_rate", 0);
+  const exergy = p("exergy_cost", 0);
+  const infra = p("infra_footprint", 0);
+
+  // place-like
+  const O2m = p("O2_margin", 0);
+  const load = p("load_factor", 1);
+  const shock = p("shock_freq", 0);
 
   const items: EligibilityItem[] = [];
 
+  /* ── персонажи ── */
   if (tkey === "character") {
-    // Переговоры: высокий Pv/Influence, достаточная S, низкий риск монстра и стресс
-    {
-      const s1 = preferHigh(Pv, 0.6);
-      const s2 = preferHigh(influence, 0.6);
-      const s3 = preferHigh(S, 0.5);
-      const s4 = preferLow(monstro_pr, 0.3);
-      const s5 = preferLow(stress, 0.5);
-      const score = clamp((s1 + s2 + s3 + s4 + s5) / 5);
+    { // negotiation
+      const c = cfg(registry, "negotiation");
+      const score =
+        (preferHigh(Pv, c.pv_min ?? 0.6) +
+          preferHigh(influence, c.influence_min ?? 0.6) +
+          preferHigh(S, c.s_min ?? 0.5) +
+          preferLow(monstro, c.monstro_max ?? 0.3) +
+          preferLow(stress, c.stress_max ?? 0.5)) /
+        5;
       items.push({
         key: "negotiation",
         label: "Переговоры",
-        ok: score >= 0.55,
-        score,
-        why: `Pv=${Pv.toFixed(2)}, Infl=${influence.toFixed(2)}, S=${S.toFixed(2)}, mon=${monstro_pr.toFixed(2)}, stress=${stress.toFixed(2)}`
+        ok: score >= (c.ok_min ?? 0.55),
+        score: clamp(score),
+        why: `Pv=${Pv.toFixed(2)}, Infl=${influence.toFixed(2)}, S=${S.toFixed(2)}, mon=${monstro.toFixed(2)}, stress=${stress.toFixed(2)}`,
       });
     }
-
-    // Ремонт без монстра: низкая Vσ, низкий монстрориск, умеренный стресс, достаточная S
-    {
-      const s1 = preferLow(Vsigma, 0.4);
-      const s2 = preferLow(monstro_pr, 0.25);
-      const s3 = preferLow(stress, 0.4);
-      const s4 = preferHigh(S, 0.5);
-      const score = clamp((s1 + s2 + s3 + s4) / 4);
+    { // repair_nomonstr
+      const c = cfg(registry, "repair_nomonstr");
+      const score =
+        (preferLow(Vsigma, c.vsigma_max ?? 0.4) +
+          preferLow(monstro, c.monstro_max ?? 0.25) +
+          preferLow(stress, c.stress_max ?? 0.4) +
+          preferHigh(S, c.s_min ?? 0.5)) /
+        4;
       items.push({
         key: "repair_nomonstr",
         label: "Ремонт без монстра",
-        ok: score >= 0.55,
-        score,
-        why: `Vσ=${Vsigma.toFixed(2)}, mon=${monstro_pr.toFixed(2)}, stress=${stress.toFixed(2)}, S=${S.toFixed(2)}`
+        ok: score >= (c.ok_min ?? 0.55),
+        score: clamp(score),
+        why: `Vσ=${Vsigma.toFixed(2)}, mon=${monstro.toFixed(2)}, stress=${stress.toFixed(2)}, S=${S.toFixed(2)}`,
       });
     }
-
-    // Локализация инцидента: низкий drift, высокий topo, достаточная S
-    {
-      const s1 = preferLow(drift, 0.3);
-      const s2 = preferHigh(topo, 0.6);
-      const s3 = preferHigh(S, 0.5);
-      const score = clamp((s1 + s2 + s3) / 3);
+    { // incident_localize
+      const c = cfg(registry, "incident_localize");
+      const score =
+        (preferLow(drift, c.drift_max ?? 0.3) +
+          preferHigh(topo, c.topo_min ?? 0.6) +
+          preferHigh(S, c.s_min ?? 0.5)) /
+        3;
       items.push({
         key: "incident_localize",
         label: "Локализация инцидента",
-        ok: score >= 0.55,
-        score,
-        why: `drift=${drift.toFixed(2)}, topo=${topo.toFixed(2)}, S=${S.toFixed(2)}`
+        ok: score >= (c.ok_min ?? 0.55),
+        score: clamp(score),
+        why: `drift=${drift.toFixed(2)}, topo=${topo.toFixed(2)}, S=${S.toFixed(2)}`,
       });
     }
-
+    { // evac_corridor
+      const c = cfg(registry, "evac_corridor");
+      const score =
+        (preferHigh(Pv, c.pv_min ?? 0.55) +
+          preferHigh(S, c.s_min ?? 0.55) +
+          preferLow(drift, c.drift_max ?? 0.6)) /
+        3;
+      items.push({
+        key: "evac_corridor",
+        label: "Эвакуационный коридор",
+        ok: score >= (c.ok_min ?? 0.55),
+        score: clamp(score),
+        why: `Pv=${Pv.toFixed(2)}, S=${S.toFixed(2)}, drift=${drift.toFixed(2)}`,
+      });
+    }
+    { // stealth_surface
+      const c = cfg(registry, "stealth_surface");
+      const score =
+        (preferLow(monstro, c.monstro_max ?? 0.25) + preferLow(stress, c.stress_max ?? 0.4)) / 2;
+      items.push({
+        key: "stealth_surface",
+        label: "Тихий выход на поверхность",
+        ok: score >= (c.ok_min ?? 0.55),
+        score: clamp(score),
+        why: `mon=${monstro.toFixed(2)}, stress=${stress.toFixed(2)}`,
+      });
+    }
     return items;
   }
 
-  // OBJECT-like (object/place/protocol/event/document) базовые сценарии:
+  /* ── объектные и прочие ── */
 
-  // Стабильное развёртывание: доза близка к 1, низкая Vσ, умеренная опасность
-  {
-    const s1 = zOriented(dose, 1.0, 0.15);
-    const s2 = preferLow(Vsigma, 0.4);
-    const s3 = preferLow(hazard_rate, 0.4);
-    const score = clamp((s1 + s2 + s3) / 3);
+  { // deploy_stable
+    const c = cfg(registry, "deploy_stable");
+    const score =
+      (zOriented(dose, 1.0, c.dose_tol ?? 0.15) +
+        preferLow(Vsigma, c.vsigma_max ?? 0.4) +
+        preferLow(hazard, c.hazard_max ?? 0.4)) /
+      3;
     items.push({
       key: "deploy_stable",
       label: "Стабильное развёртывание",
-      ok: score >= 0.55,
-      score,
-      why: `dose=${dose.toFixed(2)}, Vσ=${Vsigma.toFixed(2)}, hazard=${hazard_rate.toFixed(2)}`
+      ok: score >= (c.ok_min ?? 0.55),
+      score: clamp(score),
+      why: `dose=${dose.toFixed(2)}, Vσ=${Vsigma.toFixed(2)}, hazard=${hazard.toFixed(2)}`,
     });
   }
 
-  // Низкий след: низкие издержки инфраструктуры и эксергии
-  {
-    const s1 = preferLow(exergy_cost, 0.4);
-    const s2 = preferLow(infra_footprint, 0.4);
-    const score = clamp((s1 + s2) / 2);
+  { // low_footprint
+    const c = cfg(registry, "low_footprint");
+    const score = (preferLow(exergy, c.exergy_max ?? 0.4) + preferLow(infra, c.infra_max ?? 0.4)) / 2;
     items.push({
       key: "low_footprint",
       label: "Низкий инфраструктурный след",
-      ok: score >= 0.6,
-      score,
-      why: `exergy=${exergy_cost.toFixed(2)}, infra=${infra_footprint.toFixed(2)}`
+      ok: score >= (c.ok_min ?? 0.6),
+      score: clamp(score),
+      why: `exergy=${exergy.toFixed(2)}, infra=${infra.toFixed(2)}`,
     });
   }
 
-  // Безопасно для толпы: невысокая опасность, достаточная стабильность, не перегружать свидетелями при высоком hazard
-  {
-    const s1 = preferLow(hazard_rate, 0.35);
-    const s2 = preferHigh(S, 0.5);
-    const crowdPenalty = hazard_rate > 0.35 ? clamp(1 - witness_count / 300) : 1;
-    const score = clamp((s1 + s2) * 0.5 * crowdPenalty);
+  { // crowd_safe
+    const c = cfg(registry, "crowd_safe");
+    const base = (preferLow(hazard, c.hazard_max ?? 0.35) + preferHigh(S, c.s_min ?? 0.5)) / 2;
+    const penalty = hazard > (c.hazard_max ?? 0.35) ? clamp(1 - (witness as number) / (c.witness_k ?? 300)) : 1;
+    const score = clamp(base * penalty);
     items.push({
       key: "crowd_safe",
       label: "Безопасно для толпы",
-      ok: score >= 0.55,
+      ok: score >= (c.ok_min ?? 0.55),
       score,
-      why: `hazard=${hazard_rate.toFixed(2)}, S=${S.toFixed(2)}, witnesses=${witness_count}`
+      why: `hazard=${hazard.toFixed(2)}, S=${S.toFixed(2)}, witnesses=${witness}`,
     });
   }
 
-  // Инцидент локализуем: низкий дрейф, высокий topo, адекватная доза
-  {
-    const s1 = preferLow(drift, 0.3);
-    const s2 = preferHigh(topo, 0.6);
-    const s3 = zOriented(dose, 1.0, 0.2);
-    const score = clamp((s1 + s2 + s3) / 3);
+  { // incident_localize
+    const c = cfg(registry, "incident_localize");
+    const score =
+      (preferLow(drift, c.drift_max ?? 0.3) +
+        preferHigh(topo, c.topo_min ?? 0.6) +
+        zOriented(dose, 1.0, c.dose_tol ?? 0.2)) /
+      3;
     items.push({
       key: "incident_localize",
       label: "Локализация инцидента",
-      ok: score >= 0.55,
+      ok: score >= (c.ok_min ?? 0.55),
+      score: clamp(score),
+      why: `drift=${drift.toFixed(2)}, topo=${topo.toFixed(2)}, dose=${dose.toFixed(2)}`,
+    });
+  }
+
+  { // o2_surplus_route (для places)
+    const c = cfg(registry, "o2_surplus_route");
+    const score =
+      (preferHigh(O2m, c.o2_min ?? 0.0) + preferLow(load, c.load_max ?? 1.2) + preferLow(shock, c.shock_max ?? 0.15)) /
+      3;
+    items.push({
+      key: "o2_surplus_route",
+      label: "Маршрут с O₂-запасом",
+      ok: score >= (c.ok_min ?? 0.55),
+      score: clamp(score),
+      why: `O2=${O2m.toFixed(2)}, load=${load.toFixed(2)}, shock=${shock.toFixed(2)}`,
+    });
+  }
+
+  { // budget_ok
+    const c = cfg(registry, "budget_ok");
+    const sum = exergy + infra;
+    const score = preferLow(sum, c.budget_max ?? 0.8);
+    items.push({
+      key: "budget_ok",
+      label: "Вписывается в бюджет",
+      ok: score >= (c.ok_min ?? 0.55),
       score,
-      why: `drift=${drift.toFixed(2)}, topo=${topo.toFixed(2)}, dose=${dose.toFixed(2)}`
+      why: `exergy+infra=${sum.toFixed(2)} (≤ ${(c.budget_max ?? 0.8).toFixed(2)})`,
+    });
+  }
+
+  { // evidence_publish (documents/events)
+    const c = cfg(registry, "evidence_publish");
+    const cred = p("credibility", 0);
+    const bias = p("bias", 0.5);
+    const nov = p("novelty", 0);
+    const score =
+      (preferHigh(cred, c.cred_min ?? 0.6) + preferLow(bias, c.bias_max ?? 0.45) + preferHigh(nov, c.nov_min ?? 0.4)) /
+      3;
+    items.push({
+      key: "evidence_publish",
+      label: "Публиковать как доказательство",
+      ok: score >= (c.ok_min ?? 0.55),
+      score: clamp(score),
+      why: `cred=${cred.toFixed(2)}, bias=${bias.toFixed(2)}, novelty=${nov.toFixed(2)}`,
+    });
+  }
+
+  { // rollback_safe (protocols)
+    const c = cfg(registry, "rollback_safe");
+    const rev = p("reversibility", 0.5);
+    const score = (preferHigh(rev, c.rev_min ?? 0.6) + preferLow(Vsigma, c.vsigma_max ?? 0.5)) / 2;
+    items.push({
+      key: "rollback_safe",
+      label: "Безопасно откатить",
+      ok: score >= (c.ok_min ?? 0.55),
+      score: clamp(score),
+      why: `rev=${rev.toFixed(2)}, Vσ=${Vsigma.toFixed(2)}`,
+    });
+  }
+
+  { // quarantine_needed (alarm сценарий: «рекомендуется карантин»)
+    const c = cfg(registry, "quarantine_needed");
+    const score =
+      (preferHigh(hazard, c.hazard_min ?? 0.6) + preferHigh(drift, c.drift_min ?? 0.5) + preferHigh(Vsigma, c.vsigma_min ?? 0.6)) /
+      3;
+    items.push({
+      key: "quarantine_needed",
+      label: "Рекомендуется карантин",
+      ok: score >= (c.ok_min ?? 0.55),
+      score: clamp(score),
+      why: `hazard=${hazard.toFixed(2)}, drift=${drift.toFixed(2)}, Vσ=${Vsigma.toFixed(2)}`,
     });
   }
 
