@@ -1,7 +1,9 @@
+// src/components/EntityPanel.tsx
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import type { RegistryT } from "@/lib/models";
 import { computeCharacter, computeObject } from "@/lib/models";
 
+// ── типы пропсов ────────────────────────────────────────────────────────────
 type ViewTypePlural =
   | "characters"
   | "objects"
@@ -9,20 +11,22 @@ type ViewTypePlural =
   | "protocols"
   | "events"
   | "documents"
-  // допускаем новые типы без правок:
   | (string & {});
 
 type Props = {
   branch: string;
-  viewType: ViewTypePlural;   // plural из маршрута
-  meta: any;                  // per-entity meta/*.meta.json
-  registry: RegistryT;        // registry.json
+  // поддерживаем оба варианта до полного перехода роута
+  viewType?: ViewTypePlural;
+  type?: ViewTypePlural;
+  meta: any; // per-entity meta.json
+  registry: RegistryT;
 };
 
-// ── utils ───────────────────────────────────────────────────────────────────
+// ── утилиты ─────────────────────────────────────────────────────────────────
 const isBrowser = typeof window !== "undefined";
 const clamp = (x: number, min: number, max: number) => Math.min(max, Math.max(min, x));
-const fmt = (x: number, d = 3) => (Number.isFinite(x) ? Number(x).toFixed(d) : "—");
+const fmt = (x: unknown, d = 3) =>
+  typeof x === "number" && Number.isFinite(x) ? Number(x).toFixed(d) : "—";
 const singular = (t: string) => (t.endsWith("s") ? t.slice(0, -1) : t);
 
 const enc = (o: unknown) => {
@@ -40,7 +44,32 @@ const dec = <T,>(s: string | null): T | null => {
   }
 };
 
-// ── tiny UI ─────────────────────────────────────────────────────────────────
+// ── дефолтные модели параметров на случай пустого registry ──────────────────
+type ParamDef = { min: number; max: number; step?: number; label?: string };
+
+const DEFAULT_PARAMS: Record<string, Record<string, ParamDef>> = {
+  object: {
+    "A*": { min: 10, max: 1000, step: 10, label: "A*" },
+    E: { min: 0, max: 1000, step: 10, label: "E" },
+    exergy_cost: { min: 0, max: 10, step: 0.1, label: "exergy_cost" },
+    infra_footprint: { min: 0, max: 10, step: 0.1, label: "infra_footprint" },
+    hazard_rate: { min: 0, max: 1, step: 0.01, label: "hazard_rate" },
+    topo: { min: 0, max: 3, step: 0.01, label: "topo" },
+    witness_count: { min: 0, max: 500, step: 1, label: "witness_count" }
+  },
+  character: {
+    will: { min: 0, max: 1, step: 0.01, label: "will" },
+    loyalty: { min: 0, max: 1, step: 0.01, label: "loyalty" },
+    stress: { min: 0, max: 1, step: 0.01, label: "stress" },
+    resources: { min: 0, max: 1, step: 0.01, label: "resources" },
+    competence: { min: 0, max: 1, step: 0.01, label: "competence" },
+    risk_tolerance: { min: 0, max: 1, step: 0.01, label: "risk_tolerance" },
+    mandate_power: { min: 0, max: 1, step: 0.01, label: "mandate_power" }
+  },
+  // любые новые типы фолбэчатся к объектной модели
+};
+
+// ── маленькие UI-атомы ──────────────────────────────────────────────────────
 function Row({ children }: { children: React.ReactNode }) {
   return <div style={{ display: "flex", gap: 12, alignItems: "center" }}>{children}</div>;
 }
@@ -119,19 +148,28 @@ function LabeledRange(props: {
   );
 }
 
-// ── main ────────────────────────────────────────────────────────────────────
-export default function EntityPanel({ branch, viewType, meta, registry }: Props) {
-  // тип берём из маршрута, а не угадываем по meta
-  const tkey = singular(String(viewType || meta?.type || "objects")); // 'character' | 'object' | ...
-  const modelKey = meta?.model_ref || tkey;
+// ── главный компонент ───────────────────────────────────────────────────────
+export default function EntityPanel(props: Props) {
+  const branch = props.branch;
+  const viewTypePlural = (props.viewType || props.type || "objects") as string;
+  const tkey = singular(String(viewTypePlural || props.meta?.type || "objects")); // 'object' | 'character' | ...
+  const modelKey = props.meta?.model_ref || tkey;
 
-  // параметры из registry для данного типа/модели
-  const modelParams: Record<
-    string,
-    { min: number; max: number; step?: number; label?: string }
-  > = registry?.models?.[modelKey]?.params ?? registry?.models?.object?.params ?? {};
+  const registry = props.registry || ({} as RegistryT);
+  const meta = props.meta || {};
 
-  // стартовые значения: meta.param_bindings → дефолты из реестра
+  // достаём параметры модели из registry, иначе — дефолты
+  const registryModelParams =
+    (registry as any)?.models?.[modelKey]?.params ??
+    (registry as any)?.models?.[tkey]?.params ??
+    null;
+
+  const modelParams: Record<string, ParamDef> =
+    registryModelParams && Object.keys(registryModelParams).length > 0
+      ? registryModelParams
+      : DEFAULT_PARAMS[tkey] || DEFAULT_PARAMS.object;
+
+  // начальные значения: meta.param_bindings → дефолты (min)
   const [params, setParams] = useState<Record<string, number>>(() => {
     const base: Record<string, number> = { ...(meta?.param_bindings ?? {}) };
     for (const [k, def] of Object.entries(modelParams)) {
@@ -146,6 +184,7 @@ export default function EntityPanel({ branch, viewType, meta, registry }: Props)
     const q = new URLSearchParams(window.location.search);
     const u = dec<Record<string, number>>(q.get("p"));
     if (u && typeof u === "object") setParams((old) => ({ ...old, ...u }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // синхронизация URL
@@ -157,7 +196,7 @@ export default function EntityPanel({ branch, viewType, meta, registry }: Props)
     window.history.replaceState(null, "", url);
   }, [params]);
 
-  // вычислители по типу: новые типы → fallback к object
+  // выбор вычислителя (новые типы идут через object до спец-модели)
   type ComputeFn = (m: any, r: any, b: string) => any;
   const COMPUTE: Record<string, ComputeFn> = {
     object: computeObject,
@@ -169,13 +208,33 @@ export default function EntityPanel({ branch, viewType, meta, registry }: Props)
   };
   const compute = COMPUTE[tkey] || computeObject;
 
-  // пересчёт метрик
+  // безопасный пересчёт метрик
   const metrics = useMemo(() => {
-    const augmented = { ...meta, type: tkey, param_bindings: params };
-    return compute(augmented, registry, branch);
-  }, [branch, meta, params, registry, tkey]);
+    const augmented = { ...meta, type: tkey, model_ref: modelKey, param_bindings: params };
+    try {
+      return compute(augmented, registry, branch) || {};
+    } catch {
+      // минимальный фолбэк, чтобы UI не падал
+      if (tkey === "character") {
+        const will = Number(params.will ?? 0.5);
+        const comp = Number(params.competence ?? 0.5);
+        const res = Number(params.resources ?? 0.5);
+        const loy = Number(params.loyalty ?? 0.5);
+        const infl = (will * 0.6 + comp * 0.6 + res * 0.4) * (0.7 + 0.3 * loy);
+        return { Pv: infl * 0.6, Vsigma: 0.2, S: 0.5, influence: infl };
+      } else {
+        const A = Number(params["A*"] ?? params.A_star ?? 100);
+        const E = Number(params.E ?? params.E0 ?? 0);
+        const dose = A ? E / A : 0;
+        const risk_dry = Math.max(0, E - A) ** 2 * 0.001;
+        const risk_decay = Math.max(0, A - E) * 0.002;
+        return { Pv: 0.3, Vsigma: risk_dry + risk_decay, S: 0.5, dose, risk_dry, risk_decay };
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [branch, meta, params, registry, tkey, modelKey]);
 
-  // контролы: метки из registry.label если есть, хинты/доки из meta
+  // контролы: label из registry, подсказки/доки из meta
   const controls = useMemo(() => {
     const hints = (meta?.param_hints ?? {}) as Record<string, string>;
     const docs = (meta?.param_docs ?? {}) as Record<string, string>;
@@ -204,7 +263,7 @@ export default function EntityPanel({ branch, viewType, meta, registry }: Props)
     return out;
   }, [meta, modelParams, params]);
 
-  // краткие объяснения по типам
+  // краткое объяснение
   const explain = useMemo(() => {
     if (tkey === "character") {
       const will = Number(params.will ?? 0.5);
@@ -215,7 +274,7 @@ export default function EntityPanel({ branch, viewType, meta, registry }: Props)
       const infl = (will * 0.6 + comp * 0.6 + res * 0.4) * (0.7 + 0.3 * loy);
       return [
         `Influence ≈ (0.6·will + 0.6·competence + 0.4·resources)·(0.7 + 0.3·loyalty) = ${fmt(infl, 3)}`,
-        `Pv ↑ c influence, Pv ↓ при высоком stress.`,
+        `Pv ↑ с influence, Pv ↓ при высоком stress.`,
         `Vσ ↑ от stress и risk_tolerance.`,
         `S = σ(α₁·Pv − α₂·Vσ − α₃·drift + α₄·topo).`
       ];
@@ -226,14 +285,17 @@ export default function EntityPanel({ branch, viewType, meta, registry }: Props)
     const risk_dry = Math.max(0, E - A) ** 2 * 0.001;
     const risk_decay = Math.max(0, A - E) * 0.002;
     return [
-      `dose = E / A* = ${fmt(dose, 3)}. Цель ~ 1.`,
-      `Переэкспозиция: risk_dry = max(0, E − A*)² · 0.001 = ${fmt(risk_dry, 4)}.`,
-      `Недокорм: risk_decay = max(0, A* − E) · 0.002 = ${fmt(risk_decay, 4)}.`,
+      `dose = E / A* = ${fmt(dose, 3)}.`,
+      `risk_dry = max(0, E − A*)² · 0.001 = ${fmt(risk_dry, 4)}; risk_decay = max(0, A* − E) · 0.002 = ${fmt(
+        risk_decay,
+        4
+      )}.`,
       `Pv ↑ с q и свидетелями; Vσ ↑ от exergy_cost, infra_footprint, hazard_rate и ошибок дозы.`,
       `S = σ(α₁·Pv − α₂·Vσ − α₃·drift + α₄·topo).`
     ];
   }, [params, tkey]);
 
+  // действия
   const reset = useCallback(() => {
     const base: Record<string, number> = {};
     for (const [k, def] of Object.entries(modelParams)) base[k] = Number(def.min);
@@ -246,14 +308,7 @@ export default function EntityPanel({ branch, viewType, meta, registry }: Props)
     if (navigator?.clipboard?.writeText) navigator.clipboard.writeText(url);
   }, []);
 
-  if (!modelParams || Object.keys(modelParams).length === 0) {
-    return (
-      <div style={{ padding: 16, border: "1px solid #a33", borderRadius: 8, color: "#faa" }}>
-        Нет параметров для модели <code>{modelKey}</code>. Проверь <code>src/data/models/registry.json</code>.
-      </div>
-    );
-  }
-
+  // рендер
   return (
     <div className="entity-panel" style={{ display: "grid", gap: 16, gridTemplateColumns: "1fr 1fr" }}>
       {/* левая колонка: ползунки */}
@@ -262,7 +317,9 @@ export default function EntityPanel({ branch, viewType, meta, registry }: Props)
           <h3 style={{ margin: 0 }}>{meta?.title ?? meta?.name ?? "card"}</h3>
           <div style={{ display: "flex", gap: 8 }}>
             <button onClick={reset}>Reset</button>
-            <button onClick={share} title="Копировать URL со снимком ползунков">Share</button>
+            <button onClick={share} title="Копировать URL со снимком ползунков">
+              Share
+            </button>
           </div>
         </div>
         <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 8 }}>
@@ -285,36 +342,29 @@ export default function EntityPanel({ branch, viewType, meta, registry }: Props)
         ))}
       </section>
 
-      {/* правая колонка: метрики + объяснения + спец-бейджи */}
+      {/* правая колонка: метрики + объяснения + доп-бейджи */}
       <section>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
-          <Badge label="Pv" value={metrics?.Pv} hint="Предсказательная ценность" />
-          <Badge label="Vσ" value={metrics?.Vsigma} hint="Онтологический долг" />
-          <Badge label="S" value={metrics?.S} hint="Стабильность формы" />
-          {"dose" in (metrics ?? {}) && <Badge label="dose" value={(metrics as any).dose} hint="Отношение E/A*" />}
-          {"drift" in (metrics ?? {}) && <Badge label="drift" value={(metrics as any).drift} hint="Дрейф" />}
-          {"topo" in (metrics ?? {}) && <Badge label="topo" value={(metrics as any).topo} hint="Топологическая защита" />}
-
-          {tkey === "character" && (
-            <>
-              {"influence" in (metrics ?? {}) && (
-                <Badge label="Influence" value={(metrics as any).influence} hint="Центральность влияния" />
-              )}
-              {"monstro_pr" in (metrics ?? {}) && (
-                <Badge label="Pr[monstro]" value={(metrics as any).monstro_pr} hint="Риск монструозности" />
-              )}
-            </>
+          {"Pv" in (metrics || {}) && <Badge label="Pv" value={(metrics as any).Pv} hint="Предсказательная ценность" />}
+          {"Vsigma" in (metrics || {}) && (
+            <Badge label="Vσ" value={(metrics as any).Vsigma} hint="Онтологический долг" />
           )}
+          {"S" in (metrics || {}) && <Badge label="S" value={(metrics as any).S} hint="Стабильность формы" />}
+          {"dose" in (metrics || {}) && <Badge label="dose" value={(metrics as any).dose} hint="Отношение E/A*" />}
+          {"drift" in (metrics || {}) && <Badge label="drift" value={(metrics as any).drift} hint="Дрейф" />}
+          {"topo" in (metrics || {}) && <Badge label="topo" value={(metrics as any).topo} hint="Топологическая защита" />}
 
-          {tkey === "object" && (
-            <>
-              {"risk_dry" in (metrics ?? {}) && (
-                <Badge label="risk_dry" value={(metrics as any).risk_dry} hint="Штраф переэкспозиции" />
-              )}
-              {"risk_decay" in (metrics ?? {}) && (
-                <Badge label="risk_decay" value={(metrics as any).risk_decay} hint="Штраф недокорма" />
-              )}
-            </>
+          {tkey === "character" && "influence" in (metrics || {}) && (
+            <Badge label="Influence" value={(metrics as any).influence} hint="Центральность влияния" />
+          )}
+          {tkey === "character" && "monstro_pr" in (metrics || {}) && (
+            <Badge label="Pr[monstro]" value={(metrics as any).monstro_pr} hint="Риск монструозности" />
+          )}
+          {tkey === "object" && "risk_dry" in (metrics || {}) && (
+            <Badge label="risk_dry" value={(metrics as any).risk_dry} hint="Штраф переэкспозиции" />
+          )}
+          {tkey === "object" && "risk_decay" in (metrics || {}) && (
+            <Badge label="risk_decay" value={(metrics as any).risk_decay} hint="Штраф недокорма" />
           )}
         </div>
 
@@ -322,7 +372,9 @@ export default function EntityPanel({ branch, viewType, meta, registry }: Props)
           <div style={{ fontWeight: 600, marginBottom: 6 }}>Что происходит</div>
           <ul style={{ margin: 0, paddingLeft: 18 }}>
             {explain.map((s, i) => (
-              <li key={i} style={{ marginBottom: 4 }}>{s}</li>
+              <li key={i} style={{ marginBottom: 4 }}>
+                {s}
+              </li>
             ))}
           </ul>
         </div>
