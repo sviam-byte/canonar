@@ -15,7 +15,7 @@ export async function getStaticPaths() {
       const { default: meta } = await importMeta(e);
       return {
         params: { branch: e.branch, type: e.type, slug: e.meta.slug },
-        props: { branch: e.branch, type: e.type, meta }
+        props: { branch: e.branch, type: e.type, meta },
       };
     })
   );
@@ -38,7 +38,7 @@ const { branch, type, meta } = Astro.props;
       viewType={type}   /* plural */
       meta={meta}
       registry={registry}
-      client:load
+      client:only="react"   /* избегаем SSR-крашей EligibilityBadges */
     />
   </body>
 </html>
