@@ -3,13 +3,13 @@ export const prerender = true;
 
 import Layout from "@/layouts/Base.astro";
 
-// Собираем возможные {branch,type} из мета-файлов
-const metas = import.meta.glob("/src/data/b/*/e/*/*.meta.json", {
-  eager: true,
-  import: "default",
-}) as Record<string, any>;
-
 export async function getStaticPaths() {
+  // Собираем пары {branch,type} из мета-файлов
+  const metas = import.meta.glob("/src/data/b/*/e/*/*.meta.json", {
+    eager: true,
+    import: "default",
+  }) as Record<string, any>;
+
   const set = new Set<string>();
   for (const p of Object.keys(metas)) {
     const m = p.match(/^\/src\/data\/b\/([^/]+)\/e\/([^/]+)\/[^/]+\.meta\.json$/);
@@ -23,8 +23,9 @@ export async function getStaticPaths() {
   });
 }
 
-// На самой странице читаем готовый список
 const { branch, type } = Astro.params;
+
+// Читаем предсобранный список именно здесь
 const lists = import.meta.glob("/src/data/b/*/e/*/list.json", {
   eager: true,
   import: "default",
