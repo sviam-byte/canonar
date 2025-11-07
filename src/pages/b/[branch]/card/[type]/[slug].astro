@@ -1,22 +1,44 @@
 ---
-import EntityPanel from "@/components/EntityPanel";
-import { loadCardsByBranch, loadRegistry } from "@/lib/content";
+import Layout from "@/layouts/Base.astro";
+import EntityPanel from "@/components/EntityPanel.tsx";
+import { loadPaths } from "@/lib/paths";
 
-const { branch, type, slug } = Astro.params as { branch: string; type: string; slug: string };
-const cards = loadCardsByBranch(branch);
-const meta = cards.find(c => c.type === type && c.slug === slug);
+const { branch, type, slug } = Astro.params;
 
-if (!meta) {
-  throw new Error(`Card not found: ${branch}/${type}/${slug}`);
+// 1) Мягкая загрузка meta по glob
+let meta: any = {};
+{фс
+  const metas = import.meta.glob("/src/data/meta/**/**/**.json", { eager: true });
+  const key = `/src/data/meta/${branфch}/${type}/${slug}.json`;
+  const hit = metas[key] as any;
+  if (hit) meta = hit.default ?? hit;
 }
 
-const registry = loadRegistry(branch);
+// 2) Мягкая загрузка registry по glob
+let registry: any = {};
+{
+  const regs = import.meta.glob("/src/data/registry.json", { eager: true });
+  const hit = regs["/src/data/registry.json"] as any;
+  if (hit) registry = hit.default ?? hit;
+}
+
+// Генерация статических путей
+export async function getStaticPaths() {
+  const entries = await loadPaths();
+  return entries.map(({ branch, type, slug }) => ({
+    params: { branch, type, slug },
+    props: { branch, type, slug },
+  }));
+}
 ---
 
-<html lang="ru">
-  <head><meta charset="utf-8" /><title>{meta.title} — {branch}</title></head>
-  <body style="max-width:1080px;margin:30px auto;padding:0 16px;">
-    <a href={`/${branch}`} style="color:#8ad;">← назад</a>
-    <EntityPanel branch={branch} viewType={`${meta.type}s`} meta={meta} registry={registry} />
-  </body>
-</html>
+<Layout title={`CanonAR • ${meta?.title ?? slug}`}>
+  <h2 style="margin:0 0 12px 0;">{meta?.title ?? meta?.name ?? slug}</h2>
+  <EntityPanel
+    branch={Astro.params.branch}
+    viewType={Astro.params.type}
+    type={Astro.params.type}
+    meta={meta}
+    registry={registry}
+  />
+</Layout>
