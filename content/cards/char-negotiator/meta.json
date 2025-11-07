@@ -1,0 +1,23 @@
+{
+  "type": "character",
+  "model_ref": "character",
+  "slug": "char-negotiator",
+  "title": "Эйнар, эмиссар-лиазон",
+  "subtitle": "«Язык и коридоры»",
+  "bio": "Молодой эмиссар, тренирован на проводку делегаций и чтение сигналов у поверхностников.",
+  "param_bindings": {
+    "will": 0.72,
+    "loyalty": 0.68,
+    "stress": 0.22,
+    "resources": 0.62,
+    "competence": 0.72,
+    "risk_tolerance": 0.48,
+    "mandate_power": 0.45,
+    "dark_exposure": 0.12,
+    "topo": 0.6,
+    "witness_count": 140,
+    "map_x": 55,
+    "map_y": 40
+  },
+  "param_locked": []
+}
