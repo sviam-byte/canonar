@@ -1,52 +1,51 @@
 ---
 export const prerender = true;
-
 import Layout from "@/layouts/Base.astro";
 
-// Собираем ветки/типы из предсобранных списков
+/** Собираем только ветки. Для каждой ветки отрендерим landing со списком доступных типов */
 export async function getStaticPaths() {
   const lists = import.meta.glob("/src/data/b/*/e/*/list.json", {
     eager: true,
     import: "default",
   }) as Record<string, any>;
 
-  const seen = new Set<string>();
-  const out: Array<{ params: { branch: string; type: string }, props: any }> = [];
-
+  const branches = new Set<string>();
   for (const p of Object.keys(lists)) {
-    const m = p.match(/^\/src\/data\/b\/([^/]+)\/e\/([^/]+)\/list\.json$/);
-    if (!m) continue;
-    const [, branch, type] = m;
-    const key = `${branch}/${type}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-
-    // нормализуем элементы списка в {slug,title?}
-    const arr = Array.isArray(lists[p]) ? lists[p] : [];
-    const items = arr.map((it: any) =>
-      typeof it === "string" ? { slug: it, title: it } : { slug: it.slug, title: it.title ?? it.slug }
-    );
-
-    out.push({ params: { branch, type }, props: { branch, type, items } });
+    const m = p.match(/^\/src\/data\/b\/([^/]+)\/e\/[^/]+\/list\.json$/);
+    if (m) branches.add(m[1]);
   }
-  return out;
+
+  return Array.from(branches).map((branch) => ({ params: { branch }, props: { branch } }));
 }
 
-const { branch, type, items } = Astro.props;
+const { branch } = Astro.props;
+
+/** Внутри страницы соберём список групп (types) для этой ветки */
+const lists = import.meta.glob(`/src/data/b/${branch}/e/*/list.json`, {
+  eager: true,
+  import: "default",
+}) as Record<string, any>;
+
+const groups = Object.keys(lists).map((p) => {
+  const m = p.match(/^\/src\/data\/b\/[^/]+\/e\/([^/]+)\/list\.json$/);
+  const type = m?.[1] ?? "unknown";
+  const arr = Array.isArray((lists[p] as any).default ?? lists[p]) ? (lists[p] as any).default ?? lists[p] : [];
+  return { type, count: arr.length };
+}).sort((a,b) => a.type.localeCompare(b.type));
 ---
 
-<Layout title={`${type} · ${branch}`}>
-  <h1 style="margin:0 0 12px 0;">{type} · {branch}</h1>
+<Layout title={`Ветка · ${branch}`}>
+  <h1 style="margin:0 0 12px 0;">Ветка: {branch}</h1>
 
-  {items?.length ? (
+  {groups.length ? (
     <ul>
-      {items.map((it: any) => (
+      {groups.map(({ type, count }) => (
         <li>
-          <a href={`/b/${branch}/e/${type}/${it.slug}/`}>{it.title}</a>
+          <a href={`/b/${branch}/type/${type}/`}>{type} ({count})</a>
         </li>
       ))}
     </ul>
   ) : (
-    <p>Нет сущностей.</p>
+    <p>Нет данных для ветки {branch}.</p>
   )}
 </Layout>
