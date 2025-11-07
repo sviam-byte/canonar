@@ -1,17 +1,41 @@
-import { readdir, readFile, writeFile, mkdir, cp } from "node:fs/promises";
-import { join, relative, sep } from "node:path";
+import { readdir, readFile, writeFile, mkdir, cp, stat } from "node:fs/promises";
+import { join, relative, sep, dirname, basename } from "node:path";
 import { createHash } from "node:crypto";
 
 const ROOT = process.cwd();
-const CONTENT = join(ROOT, "content", "models");
+const CONTENT_DIRS = [
+  join(ROOT, "content", "models"), // прежний путь
+  join(ROOT, "content")            // обычный контент
+];
+const REGISTRY_FILE = join(ROOT, "content", "models", "registry.json"); // источник registry
 const PUBLIC = join(ROOT, "public");
 const SRC_DATA = join(ROOT, "src", "data");
+
+// Ветки лора
 const ERA_DIRS = new Set(["current", "pre-rector", "pre-borders"]);
+
+// Маппинг к множественному числу для URL-сегмента e/<type>
+const SING2PL = {
+  character: "characters",
+  object: "objects",
+  place: "places",
+  protocol: "protocols",
+  event: "events",
+  document: "documents",
+  hybrid: "hybrid"
+};
+const PL_SET = new Set(Object.values(SING2PL));
 
 const ensureDir = async (p) => mkdir(p, { recursive: true });
 
+const tryStat = async (p) => {
+  try { return await stat(p); } catch { return null; }
+};
+
 const walkFiles = async (dir, pred) => {
   const out = [];
+  const st = await tryStat(dir);
+  if (!st || !st.isDirectory()) return out;
   const ents = await readdir(dir, { withFileTypes: true });
   for (const e of ents) {
     const p = join(dir, e.name);
@@ -45,18 +69,36 @@ const slugify = (s) => {
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "");
 };
-const singular = (t) => (t.endsWith("s") ? t.slice(0, -1) : t);
 const sha1 = (s) => createHash("sha1").update(String(s)).digest("hex");
 
-const branchAndTypeFromPath = (absFile) => {
-  const rel = relative(CONTENT, absFile).split(sep);
-  const idx = rel.findIndex((p) => ERA_DIRS.has(p));
-  const branch = idx >= 0 ? rel[idx] : "current";
-  const type = idx >= 0 && rel[idx + 1] ? rel[idx + 1] : "entries";
-  return { branch, type };
+const singular = (t) => {
+  if (!t) return "";
+  // если прислали уже plural, верни приблизительное singular
+  for (const [s, p] of Object.entries(SING2PL)) if (t === p) return s;
+  // грубый срез "s" в конце — как fallback
+  return t.endsWith("s") ? t.slice(0, -1) : t;
 };
 
-const canonicalBranch = (rawEra, fallback) => (ERA_DIRS.has(rawEra) ? rawEra : fallback);
+const toPluralType = (rawType) => {
+  if (!rawType) return "hybrid";
+  const low = String(rawType).toLowerCase();
+  if (PL_SET.has(low)) return low;
+  return SING2PL[low] || "hybrid";
+};
+
+// Универсальный парсер branch/type из абсолютного файла, допускает оба корня.
+const branchAndTypeFromPath = (absFile) => {
+  // Нормализуем к POSIX
+  const posix = absFile.split(sep).join("/");
+  // Ищем .../content/(models/)?<branch>/<type>/...
+  const m = posix.match(/\/content\/(?:models\/)?(current|pre-rector|pre-borders)\/([^/]+)\//);
+  const branch = m?.[1] ?? "current";
+  const maybeGroup = m?.[2] ?? "entries";
+  const typePlural = PL_SET.has(maybeGroup) ? maybeGroup : toPluralType(maybeGroup);
+  return { branch, type: typePlural };
+};
+
+const canonicalBranch = (raw, fallback) => (ERA_DIRS.has(raw) ? raw : fallback);
 
 const normalizeAuthors = (authors) =>
   Array.isArray(authors)
@@ -71,10 +113,7 @@ const ensureUniqueSlugFactory = () => {
     const scope = `${branch}/${type}`;
     if (!perScope.has(scope)) perScope.set(scope, new Map());
     const m = perScope.get(scope);
-    if (!m.has(slug)) {
-      m.set(slug, 1);
-      return slug;
-    }
+    if (!m.has(slug)) { m.set(slug, 1); return slug; }
     const n = m.get(slug) + 1;
     m.set(slug, n);
     return `${slug}-${n}`;
@@ -89,35 +128,53 @@ const safeReadJSON = async (file) => {
   }
 };
 
+const writeJsonPretty = async (p, obj) => {
+  await ensureDir(dirname(p));
+  await writeFile(p, JSON.stringify(obj, null, 2), "utf8");
+};
+
 const main = async () => {
-  // 1) registry → копируем как есть в public/src и вытащим map-конфиг
-  const registryPath = join(CONTENT, "registry.json");
-  const registry = await safeReadJSON(registryPath);
+  // 1) registry.json (может отсутствовать на раннем этапе)
+  let registry = {};
+  try {
+    registry = await safeReadJSON(REGISTRY_FILE);
+  } catch {
+    // ok, без registry переживём
+    registry = {};
+  }
 
-  // 2) читаем все исходные meta
-  const metaFiles = await walkMetaFiles(CONTENT);
+  // 2) собираем все *.meta.json из обоих корней
+  const metaFilesArrays = await Promise.all(CONTENT_DIRS.map((d) => walkMetaFiles(d)));
+  const metaFiles = metaFilesArrays.flat();
+
   const dedupeSlug = ensureUniqueSlugFactory();
-
   const entries = [];
   const warnings = [];
 
   for (const f of metaFiles) {
     const raw = await safeReadJSON(f);
-    const fromPath = branchAndTypeFromPath(f);
-    const branch = canonicalBranch(raw.era, fromPath.branch);
-    const type = fromPath.type; // plural route segment
 
-    const baseSlug = raw.slug || raw.id || raw.name || raw.title || f;
-    let slug = slugify(baseSlug);
-    if (!slug) slug = slugify(sha1(f).slice(0, 8));
+    // ветка: meta.branch|meta.era|path
+    const parsed = branchAndTypeFromPath(f);
+    const branch = canonicalBranch(raw.branch || raw.era, parsed.branch);
+
+    // тип-группа: meta.group|meta.type|path, НОРМАЛИЗУЕМ к plural
+    const fromMetaGroup = raw.group ? toPluralType(raw.group) : null;
+    const fromMetaType  = raw.type  ? toPluralType(raw.type)  : null;
+    const type = fromMetaGroup || fromMetaType || parsed.type; // уже plural
+
+    // slug
+    const baseSlug = raw.slug || raw.id || raw.name || raw.title || basename(f).replace(/\.meta\.json$/,"");
+    let slug = slugify(baseSlug) || slugify(sha1(f).slice(0, 8));
     slug = dedupeSlug(branch, type, slug);
 
+    // стабильный entity_id
     const entity_id =
       raw.entity_id || raw.id || sha1(`${branch}/${type}/${slug}:${raw.name ?? raw.title ?? ""}`);
 
     const meta = {
       entity_id,
-      type: singular(raw.type || type),          // предпочитаем явно указанное
+      type: singular(raw.type || type),      // для моделей храним singular
       slug,
       title: raw.name || raw.title || slug,
       subtitle: raw.title && raw.name ? raw.title : raw.subtitle || "",
@@ -138,7 +195,8 @@ const main = async () => {
       param_locked: Array.isArray(raw.param_locked) ? raw.param_locked : [],
       coords: raw.coords || null,
       notes: raw.notes || "",
-      changelog: Array.isArray(raw.changelog) ? raw.changelog : []
+      changelog: Array.isArray(raw.changelog) ? raw.changelog : [],
+      branch
     };
 
     for (const k of ["entity_id", "type", "slug", "title"]) {
@@ -148,20 +206,20 @@ const main = async () => {
     entries.push({ branch, type, meta });
   }
 
-  // 3) стабильная сортировка
+  // 3) сортировка
   entries.sort((a, b) =>
     a.branch === b.branch
       ? a.type === b.type
-        ? a.meta.title.localeCompare(b.meta.title, "en")
+        ? a.meta.title.localeCompare(b.meta.title, "ru")
         : a.type.localeCompare(b.type, "en")
       : a.branch.localeCompare(b.branch, "en")
   );
 
-  // 4) ветки -> типы
+  // 4) ветка → набор типов
   const branchesMap = new Map();
   for (const e of entries) {
     if (!branchesMap.has(e.branch)) branchesMap.set(e.branch, new Set());
-    branchesMap.get(e.branch).add(e.type);
+    branchesMap.get(e.branch).add(e.type); // plural
   }
   const branches = [...branchesMap.entries()].map(([name, set]) => ({
     name,
@@ -172,78 +230,82 @@ const main = async () => {
     generatedAt: new Date().toISOString(),
     branches,
     count: entries.length,
-    entries
+    entries // [{branch, type(plural), meta}]
   };
 
-  // 5) вывод в public/src
+  // 5) вывод
   await ensureDir(PUBLIC);
   await ensureDir(SRC_DATA);
   await ensureDir(join(PUBLIC, "models"));
   await ensureDir(join(SRC_DATA, "models"));
 
-  // главный индекс
-  await writeFile(join(PUBLIC, "index.json"), JSON.stringify(indexObj, null, 2), "utf8");
-  await writeFile(join(SRC_DATA, "index.json"), JSON.stringify(indexObj, null, 2), "utf8");
+  await writeJsonPretty(join(PUBLIC, "index.json"), indexObj);
+  await writeJsonPretty(join(SRC_DATA, "index.json"), indexObj);
 
-  // списки, карты slug->id, per-entity meta
+  // списки, карты, per-entity meta
   for (const { name: branch } of branches) {
-    const types = branchesMap.get(branch);
+    const types = branchesMap.get(branch) || new Set();
     for (const t of types) {
       const scoped = entries.filter((e) => e.branch === branch && e.type === t);
-
       const list = scoped.map((e) => ({ slug: e.meta.slug, title: e.meta.title }));
       const mapSlugToId = Object.fromEntries(scoped.map((e) => [e.meta.slug, e.meta.entity_id]));
 
       const pubTypePath = join(PUBLIC, "b", branch, "e", t);
       const dataTypePath = join(SRC_DATA, "b", branch, "e", t);
-      await ensureDir(pubTypePath);
-      await ensureDir(dataTypePath);
 
-      await writeFile(join(pubTypePath, `list.json`), JSON.stringify(list, null, 2), "utf8");
-      await writeFile(join(dataTypePath, `list.json`), JSON.stringify(list, null, 2), "utf8");
-
-      await writeFile(join(pubTypePath, `map.json`), JSON.stringify(mapSlugToId, null, 2), "utf8");
-      await writeFile(join(dataTypePath, `map.json`), JSON.stringify(mapSlugToId, null, 2), "utf8");
+      await writeJsonPretty(join(pubTypePath, "list.json"), list);
+      await writeJsonPretty(join(pubTypePath, "map.json"), mapSlugToId);
+      await writeJsonPretty(join(dataTypePath, "list.json"), list);
+      await writeJsonPretty(join(dataTypePath, "map.json"), mapSlugToId);
 
       for (const e of scoped) {
-        const pubEntityPath = join(pubTypePath, `${e.meta.slug}.meta.json`);
-        const dataEntityPath = join(dataTypePath, `${e.meta.slug}.meta.json`);
-        await writeFile(pubEntityPath, JSON.stringify(e.meta, null, 2), "utf8");
-        await writeFile(dataEntityPath, JSON.stringify(e.meta, null, 2), "utf8");
+        await writeJsonPretty(join(pubTypePath, `${e.meta.slug}.meta.json`), e.meta);
+        await writeJsonPretty(join(dataTypePath, `${e.meta.slug}.meta.json`), e.meta);
       }
     }
   }
 
-  // registry.json → public/src
+  // registry.json → public/src (если есть)
   try {
-    await cp(join(CONTENT, "registry.json"), join(PUBLIC, "models", "registry.json"));
-    await cp(join(CONTENT, "registry.json"), join(SRC_DATA, "models", "registry.json"));
+    await cp(REGISTRY_FILE, join(PUBLIC, "models", "registry.json"));
+    await cp(REGISTRY_FILE, join(SRC_DATA, "models", "registry.json"));
   } catch (e) {
     console.warn(`[index] cannot copy registry.json: ${e.message}`);
   }
 
-  // map config быстрым дублированием (для простого импорта на клиенте)
-  const mapCfg = registry.map || {};
+  // map config (если есть)
+  const mapCfg = (registry && registry.map) ? registry.map : {};
   await ensureDir(join(SRC_DATA, "map"));
   await ensureDir(join(PUBLIC, "map"));
-  await writeFile(join(SRC_DATA, "map", "config.json"), JSON.stringify(mapCfg, null, 2), "utf8");
-  await writeFile(join(PUBLIC, "map", "config.json"), JSON.stringify(mapCfg, null, 2), "utf8");
+  await writeJsonPretty(join(SRC_DATA, "map", "config.json"), mapCfg);
+  await writeJsonPretty(join(PUBLIC, "map", "config.json"), mapCfg);
 
-  // предупреждения
-  // быстрая проверка: заблокированные параметры существуют в модели
-  const modelDefs = registry.models || {};
+  // предупреждения: заблокированный параметр существует в модели
+  const modelDefs = (registry && registry.models) ? registry.models : {};
   for (const e of entries) {
     const defs = modelDefs[e.meta.model_ref] || modelDefs[e.meta.type] || {};
     const params = defs.params || {};
     for (const lk of e.meta.param_locked || []) {
       if (!(lk in params)) {
-        warnings.push(`[index] ${e.meta.slug}: locked "${lk}" not found in model "${e.meta.model_ref}"`);
+        warnings.push(`[index] ${e.meta.slug}: locked "${lk}" not in model "${e.meta.model_ref}"`);
       }
     }
   }
 
+  // отчёт
+  const countBy = Object.fromEntries(
+    [...branchesMap.keys()].map((b) => [
+      b,
+      Object.fromEntries(
+        [...(branchesMap.get(b) || new Set())].map((t) => [
+          t, entries.filter((e) => e.branch === b && e.type === t).length
+        ])
+      )
+    ])
+  );
   if (warnings.length) warnings.forEach((w) => console.warn(w));
   console.log(`[canonAR] Wrote index + lists + maps + per-entity meta: ${entries.length} entries`);
+  console.log(`[canonAR] counts: ${JSON.stringify(countBy)}`);
 };
 
 main().catch((e) => {
