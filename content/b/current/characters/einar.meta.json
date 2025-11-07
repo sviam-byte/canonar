@@ -1,0 +1,29 @@
+{
+  "entity_id": "a3c0a1a4-1c14-4da2-b6a2-3f3a2c4e20a0",
+  "type": "characters",
+  "slug": "einar",
+  "title": "Эйнар",
+  "subtitle": "Эмиссар, коридор W*→W",
+  "authors": [{"name": "Канцелярия Регнума", "role": "registry"}],
+  "year": 410,
+  "version_tags": ["current"],
+  "status": "published",
+  "tags": ["персонаж","эмиссар","переговоры"],
+  "relations": [
+    {"type": "place", "target": "1f7c5c2e-8c2b-4f9d-a9a0-0a6c2b8d00d7"},
+    {"type": "protocol", "target": "b7f2c2b2-9f3f-44b1-9f3e-6a2f7a8a1001"}
+  ],
+  "media": [],
+  "model_ref": "character.base",
+  "param_bindings": {
+    "will": 0.72,
+    "loyalty": 0.66,
+    "stress": 0.41,
+    "resources": 0.38,
+    "competence": 0.81,
+    "risk_tolerance": 0.52,
+    "mandate_power": 0.6
+  },
+  "notes": "Подходит для «Negotiation»: широкий коридор и видимость ок.",
+  "changelog": [{"at": "410-11-07", "by": "Curator", "msg": "Инициализирован профиль"}]
+}
