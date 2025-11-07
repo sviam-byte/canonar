@@ -5,13 +5,13 @@ import Layout from "@/layouts/Base.astro";
 import EntityPanel from "@/components/EntityPanel";
 import registry from "@/data/models/registry.json";
 
-// Читаем предсобранные .meta.json из src/data
-const metas = import.meta.glob("/src/data/b/*/e/*/*.meta.json", {
-  eager: true,
-  import: "default",
-}) as Record<string, any>;
-
 export async function getStaticPaths() {
+  // ВАЖНО: объявляем внутри функции
+  const metas = import.meta.glob("/src/data/b/*/e/*/*.meta.json", {
+    eager: true,
+    import: "default",
+  }) as Record<string, any>;
+
   const paths: Array<{ params: { branch: string; type: string; slug: string }, props: any }> = [];
   for (const [p, meta] of Object.entries(metas)) {
     const m = p.match(/^\/src\/data\/b\/([^/]+)\/e\/([^/]+)\/([^/]+)\.meta\.json$/);
