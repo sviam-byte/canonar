@@ -1,0 +1,32 @@
+{
+  "type": "object",
+  "model_ref": "object",
+  "slug": "object-stable",
+  "title": "Стабильный модуль наблюдения M-12",
+  "subtitle": "Калиброван к дозе ~1, низкие риски",
+  "param_bindings": {
+    "A*": 100,
+    "E": 98,
+    "q": 0.7,
+    "rho": 0.96,
+    "exergy_cost": 0.15,
+    "infra_footprint": 0.15,
+    "hazard_rate": 0.1,
+    "topo": 0.6,
+    "witness_count": 120,
+    "causal_penalty": 0.0,
+    "dark_flag": 0,
+    "cvar_alpha": 0.05,
+    "map_x": 40,
+    "map_y": 62
+  },
+  "param_hints": {
+    "A*": "Носимая ёмкость/вместимость.",
+    "E": "Экспозиция/нагрузка за окно.",
+    "rho": "Устойчивость следа (персистентность)."
+  },
+  "param_docs": {
+    "cvar_alpha": "/docs/risk/cvar"
+  },
+  "param_locked": []
+}
