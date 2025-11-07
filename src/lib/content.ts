@@ -1,15 +1,17 @@
-// универсальный лоадер карточек и реестра
+// src/lib/content.ts
+// Универсальный лоадер карточек и реестра: ест и /content/cards/**, и /content/<branch>/<group>/**
 
 export type CardMeta = {
   slug: string;
   title: string;
   subtitle?: string;
-  type: "character"|"object"|"place"|"protocol"|"event"|"document"|"hybrid"|string;
-  branch?: string;                 // "current" | "pre-borders" | ...
+  // type — сингуляр ("place"|"object"|...), group — папочный множественный ("places"|"objects"|...)
+  type?: string;
+  group?: string;
+  branch?: "current" | "pre-borders" | "pre-rector" | string;
   param_bindings?: Record<string, number>;
   tags?: string[];
   updated_at?: string;
-  map?: { image?: string };
   [k: string]: any;
 };
 
@@ -21,56 +23,109 @@ export type Registry = {
   thresholds?: Record<string, any>;
 };
 
-const globMeta = import.meta.glob("/content/cards/**/*.meta.json", { eager: true, import: "default" });
-const globData = import.meta.glob("/content/cards/**/*.data.json", { eager: true, import: "default" }); // опционально
+const BRANCHES = ["current", "pre-borders", "pre-rector"] as const;
+const SING_BY_GROUP: Record<string, string> = {
+  characters: "character",
+  objects: "object",
+  places: "place",
+  protocols: "protocol",
+  events: "event",
+  documents: "document",
+  hybrid: "hybrid",
+};
 
-// /content/models/<branch>/registry.json, фоллбэк на current
-const registries = import.meta.glob("/content/models/*/registry.json", { eager: true, import: "default" });
+// 1) БЕРЁМ всё .meta в /content/**, не только /content/cards/**
+const globMeta = import.meta.glob("/content/**/*.meta.json", {
+  eager: true,
+  import: "default",
+});
+const globData = import.meta.glob("/content/**/*.data.json", {
+  eager: true,
+  import: "default",
+});
+
+// 2) Реестры моделей: /content/models/<branch>/registry.json
+const registries = import.meta.glob("/content/models/*/registry.json", {
+  eager: true,
+  import: "default",
+});
+
+// ---------- helpers ----------
 
 function pathToSlug(p: string) {
-  // /content/cards/<...>/<slug>.meta.json  -> <slug>
   const base = p.split("/").pop() || "";
-  return base.replace(/\.meta\.json$/,"");
+  return base.replace(/\.meta\.json$/, "");
 }
 
 function pickBranchFromPath(p: string): string | undefined {
-  // допускаем структуру /content/cards/<branch>/.../*.meta.json
-  const parts = p.split("/");
-  const idx = parts.indexOf("cards");
-  if (idx >= 0 && parts.length > idx+2) {
-    // cards / <maybe-branch> / ...
-    const maybe = parts[idx+1];
-    // если похоже на ветку
-    if (["current","pre-borders","pre-rector"].includes(maybe)) return maybe;
-  }
-  return undefined;
+  // матч ветки в обоих вариантах путей: /content/(cards/)?<branch>/
+  const m = p.match(/\/content\/(?:cards\/)?(current|pre-borders|pre-rector)\//);
+  return m?.[1];
 }
 
-export function loadCards() {
+function pickGroupFromPath(p: string): string | undefined {
+  // вынимаем group (places|objects|...) сразу после ветки
+  const m = p.match(
+    /\/content\/(?:cards\/)?(?:current|pre-borders|pre-rector)\/([^/]+)\//
+  );
+  return m?.[1]?.toLowerCase();
+}
+
+// ---------- API ----------
+
+export function loadCards(): CardMeta[] {
   const byKey: Record<string, CardMeta> = {};
+
+  // .meta.json
   for (const [path, val] of Object.entries(globMeta) as any) {
+    // Игнорим все под /content/models/**
+    if (path.includes("/content/models/")) continue;
+
     const meta = val as CardMeta;
-    // slug: из файла, иначе из имени файла
     const slug = meta.slug || pathToSlug(path);
-    const branch = meta.branch || pickBranchFromPath(path) || "current";
-    byKey[`${branch}:${slug}`] = { slug, branch, ...meta };
+    const branch =
+      (meta.branch || pickBranchFromPath(path) || "current") as CardMeta["branch"];
+    const group = (meta.group || pickGroupFromPath(path) || "").toLowerCase();
+
+    // Определяем сингулярный type:
+    const typeSing = (meta.type || SING_BY_GROUP[group] || "hybrid").toLowerCase();
+
+    const key = `${branch}:${group}:${slug}`;
+    byKey[key] = {
+      slug,
+      branch,
+      group,
+      type: typeSing,
+      ...meta,
+    };
   }
-  // подшиваем .data.json рядом, если есть
+
+  // .data.json рядом (опционально)
   for (const [path, val] of Object.entries(globData) as any) {
-    const slug = pathToSlug(path.replace(/\.data\.json$/, ".meta.json"));
+    if (path.includes("/content/models/")) continue;
+    const metaPathGuess = path.replace(/\.data\.json$/, ".meta.json");
+    const slug = pathToSlug(metaPathGuess);
     const branch = pickBranchFromPath(path) || "current";
-    const key = `${branch}:${slug}`;
+    const group = pickGroupFromPath(path) || "";
+    const key = `${branch}:${group}:${slug}`;
     if (byKey[key]) (byKey[key] as any).data = val;
   }
+
   return Object.values(byKey);
 }
 
 export function loadCardsByBranch(branch: string) {
-  return loadCards().filter(c => (c.branch || "current") === branch);
+  return loadCards().filter((c) => (c.branch || "current") === branch);
+}
+
+export function loadCardsByBranchAndGroup(branch: string, group: string) {
+  const g = group.toLowerCase();
+  return loadCards().filter(
+    (c) => (c.branch || "current") === branch && (c.group || "") === g
+  );
 }
 
 export function loadRegistry(branch: string): Registry {
-  // ищем идеальный матч, затем current, затем первый попавшийся
   const byBranch: Record<string, Registry> = {};
   for (const [path, val] of Object.entries(registries) as any) {
     const b = path.split("/").slice(-2)[0]; // models/<branch>/registry.json
