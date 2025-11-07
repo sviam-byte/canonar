@@ -3,20 +3,20 @@ import Layout from "@/layouts/Base.astro";
 import EntityPanel from "@/components/EntityPanel.tsx";
 import { loadPaths } from "@/lib/paths";
 
-// Эти JSON генерятся твоим скриптом; панель без них тоже отрендерим.
 let meta: any = {};
 let registry: any = {};
 try {
   const mod = await import(`@/data/meta/${Astro.params.branch}/${Astro.params.type}/${Astro.params.slug}.json`, { assert: { type: "json" } } as any);
   meta = mod.default ?? mod;
-} catch {/* fallback ok */}
+} catch {}
 try {
   const modR = await import("@/data/registry.json", { assert: { type: "json" } } as any);
   registry = modR.default ?? modR;
-} catch {/* fallback ok */}
+} catch {}
 
 export async function getStaticPaths() {
   const entries = await loadPaths();
+  // Если хочешь ограничить список для /e/, фильтруй тут; иначе — те же пути.
   return entries.map(({ branch, type, slug }) => ({
     params: { branch, type, slug },
     props: { branch, type, slug },
