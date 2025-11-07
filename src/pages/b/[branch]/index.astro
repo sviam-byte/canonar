@@ -1,56 +1,52 @@
 ---
-// src/pages/b/[branch]/index.astro
 export const prerender = true;
 
 import Layout from "@/layouts/Base.astro";
 
-// Генерируем список веток из предсобранных списков
+// Собираем ветки/типы из предсобранных списков
 export async function getStaticPaths() {
   const lists = import.meta.glob("/src/data/b/*/e/*/list.json", {
     eager: true,
     import: "default",
   }) as Record<string, any>;
 
-  const branches = new Set<string>();
+  const seen = new Set<string>();
+  const out: Array<{ params: { branch: string; type: string }, props: any }> = [];
+
   for (const p of Object.keys(lists)) {
-    const m = p.match(/^\/src\/data\/b\/([^/]+)\/e\/[^/]+\/list\.json$/);
-    if (m) branches.add(m[1]);
+    const m = p.match(/^\/src\/data\/b\/([^/]+)\/e\/([^/]+)\/list\.json$/);
+    if (!m) continue;
+    const [, branch, type] = m;
+    const key = `${branch}/${type}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    // нормализуем элементы списка в {slug,title?}
+    const arr = Array.isArray(lists[p]) ? lists[p] : [];
+    const items = arr.map((it: any) =>
+      typeof it === "string" ? { slug: it, title: it } : { slug: it.slug, title: it.title ?? it.slug }
+    );
+
+    out.push({ params: { branch, type }, props: { branch, type, items } });
   }
-  return Array.from(branches).map((branch) => ({
-    params: { branch },
-    props: { branch },
-  }));
+  return out;
 }
 
-const { branch } = Astro.props;
-
-// Типы и их размеры в выбранной ветке
-const lists = import.meta.glob("/src/data/b/*/e/*/list.json", {
-  eager: true,
-  import: "default",
-}) as Record<string, any>;
-
-const types = new Map<string, number>();
-for (const [p, list] of Object.entries(lists)) {
-  const m = p.match(/^\/src\/data\/b\/([^/]+)\/e\/([^/]+)\/list\.json$/);
-  if (!m) continue;
-  const [, b, type] = m;
-  if (b !== branch) continue;
-  types.set(type, Array.isArray(list) ? list.length : 0);
-}
+const { branch, type, items } = Astro.props;
 ---
 
-<Layout title={`Ветка · ${branch}`}>
-  <h1>Ветка: {branch}</h1>
-  {types.size ? (
+<Layout title={`${type} · ${branch}`}>
+  <h1 style="margin:0 0 12px 0;">{type} · {branch}</h1>
+
+  {items?.length ? (
     <ul>
-      {Array.from(types.entries()).map(([t, n]) => (
+      {items.map((it: any) => (
         <li>
-          <a href={`/b/${branch}/type/${t}/`}>{t}</a> <small>({n})</small>
+          <a href={`/b/${branch}/e/${type}/${it.slug}/`}>{it.title}</a>
         </li>
       ))}
     </ul>
   ) : (
-    <p>Нет типов в ветке.</p>
+    <p>Нет сущностей.</p>
   )}
 </Layout>
