@@ -1,47 +1,37 @@
 ---
 import Layout from "@/layouts/Base.astro";
-import EntityPanel from "@/components/EntityPanel";
+import EntityPanel from "@/components/EntityPanel.tsx";
+import { loadPaths } from "@/lib/paths";
 
-// Собираем все карточки из content/cards/<branch>/<type>/*.meta.json
+// Эти JSON генерятся твоим скриптом; панель без них тоже отрендерим.
+let meta: any = {};
+let registry: any = {};
+try {
+  const mod = await import(`@/data/meta/${Astro.params.branch}/${Astro.params.type}/${Astro.params.slug}.json`, { assert: { type: "json" } } as any);
+  meta = mod.default ?? mod;
+} catch {/* fallback ok */}
+try {
+  const modR = await import("@/data/registry.json", { assert: { type: "json" } } as any);
+  registry = modR.default ?? modR;
+} catch {/* fallback ok */}
+
 export async function getStaticPaths() {
-  // meta-файлы: /content/cards/current/characters/kaeya.meta.json и т.д.
-  const metas = import.meta.glob("/content/cards/*/*/*.meta.json", { eager: true });
-
-  // registry: /content/models/<branch>/registry.json
-  const registries = import.meta.glob("/content/models/*/registry.json", { eager: true });
-
-  const paths = [];
-  for (const fullPath in metas) {
-    // fullPath: "/content/cards/current/objects/coil-reactor.meta.json"
-    const m = fullPath.match(/^\/content\/cards\/([^/]+)\/([^/]+)\/([^/.]+)\.meta\.json$/);
-    if (!m) continue;
-    const [, branch, type, slug] = m;
-
-    const meta = (metas[fullPath] as any)?.default ?? (metas[fullPath] as any);
-    const regKey = `/content/models/${branch}/registry.json`;
-    const registry = (registries[regKey] as any)?.default ?? (registries[regKey] as any) ?? {};
-
-    paths.push({
-      params: { branch, type, slug },
-      props: { branch, type, slug, meta, registry },
-    });
-  }
-
-  return paths;
+  const entries = await loadPaths();
+  return entries.map(({ branch, type, slug }) => ({
+    params: { branch, type, slug },
+    props: { branch, type, slug },
+  }));
 }
-
-const { branch, type, slug, meta, registry } = Astro.props;
+const { branch, type, slug } = Astro.params;
 ---
 
-<Layout title={`${meta?.title ?? slug} — ${type}`}>
-  <main style="max-width:1200px;margin:0 auto;padding:24px;">
-    <h2 style="margin:0 0 12px 0;">Ветка: <code>{branch}</code> • Тип: <code>{type}</code> • Слаг: <code>{slug}</code></h2>
-
-    <EntityPanel
-      branch={branch}
-      viewType={`${type}s`}
-      meta={meta}
-      registry={registry}
-    />
-  </main>
+<Layout title={`CanonAR • ${meta?.title ?? slug}`}>
+  <h2 style="margin:0 0 12px 0;">{meta?.title ?? meta?.name ?? slug}</h2>
+  <EntityPanel
+    branch={branch}
+    viewType={type}
+    type={type}
+    meta={meta}
+    registry={registry}
+  />
 </Layout>
