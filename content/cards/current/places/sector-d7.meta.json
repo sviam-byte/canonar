@@ -1,11 +1,10 @@
-// content/cards/current/places/sector-d7.meta.json
 {
   "slug": "sector-d7",
   "title": "Сектор D-7",
   "subtitle": "окраинный жилой массив под куполом",
   "type": "place",
   "branch": "current",
-  "tags": ["habitat","o2","logistics"],
+  "tags": ["habitat", "o2", "logistics"],
   "map": { "image": "/images/skyline.png" },
   "param_bindings": {
     "load_factor": 1.12,
