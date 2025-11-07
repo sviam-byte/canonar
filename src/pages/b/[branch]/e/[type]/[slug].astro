@@ -2,11 +2,10 @@
 export const prerender = true;
 
 import Layout from "@/layouts/Base.astro";
-import EntityPanel from "@/components/EntityPanel";
+import EntityPanel from "@/components/EntityPanel.tsx";
 import registry from "@/data/models/registry.json";
 
 export async function getStaticPaths() {
-  // ВАЖНО: объявляем внутри функции
   const metas = import.meta.glob("/src/data/b/*/e/*/*.meta.json", {
     eager: true,
     import: "default",
@@ -27,5 +26,6 @@ const viewType = type;
 ---
 
 <Layout title={`E · ${meta?.title ?? slug}`}>
-  <EntityPanel branch={branch} viewType={viewType} meta={meta} registry={registry} />
+  <!-- ВАЖНО: делаем остров, чтобы работали графики/слайдеры -->
+  <EntityPanel client:only="react" branch={branch} viewType={viewType} meta={meta} registry={registry} />
 </Layout>
