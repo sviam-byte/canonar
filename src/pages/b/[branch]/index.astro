@@ -2,36 +2,39 @@
 export const prerender = true;
 import Layout from "@/layouts/Base.astro";
 
-/** Собираем только ветки. Для каждой ветки отрендерим landing со списком доступных типов */
+/** Генерим только ветки */
 export async function getStaticPaths() {
-  const lists = import.meta.glob("/src/data/b/*/e/*/list.json", {
+  const all = import.meta.glob("/src/data/b/*/e/*/list.json", {
     eager: true,
     import: "default",
   }) as Record<string, any>;
 
   const branches = new Set<string>();
-  for (const p of Object.keys(lists)) {
+  for (const p of Object.keys(all)) {
     const m = p.match(/^\/src\/data\/b\/([^/]+)\/e\/[^/]+\/list\.json$/);
     if (m) branches.add(m[1]);
   }
-
   return Array.from(branches).map((branch) => ({ params: { branch }, props: { branch } }));
 }
 
 const { branch } = Astro.props;
 
-/** Внутри страницы соберём список групп (types) для этой ветки */
-const lists = import.meta.glob(`/src/data/b/${branch}/e/*/list.json`, {
+/** ВАЖНО: только статический glob, дальше фильтруем по branch */
+const ALL_LISTS = import.meta.glob("/src/data/b/*/e/*/list.json", {
   eager: true,
   import: "default",
 }) as Record<string, any>;
 
-const groups = Object.keys(lists).map((p) => {
-  const m = p.match(/^\/src\/data\/b\/[^/]+\/e\/([^/]+)\/list\.json$/);
-  const type = m?.[1] ?? "unknown";
-  const arr = Array.isArray((lists[p] as any).default ?? lists[p]) ? (lists[p] as any).default ?? lists[p] : [];
-  return { type, count: arr.length };
-}).sort((a,b) => a.type.localeCompare(b.type));
+const groups = Object.keys(ALL_LISTS)
+  .filter((p) => p.startsWith(`/src/data/b/${branch}/e/`))
+  .map((p) => {
+    const m = p.match(/^\/src\/data\/b\/[^/]+\/e\/([^/]+)\/list\.json$/);
+    const type = m?.[1] ?? "unknown";
+    const mod = (ALL_LISTS[p] as any);
+    const arr = Array.isArray(mod?.default) ? mod.default : (Array.isArray(mod) ? mod : []);
+    return { type, count: arr.length };
+  })
+  .sort((a, b) => a.type.localeCompare(b.type));
 ---
 
 <Layout title={`Ветка · ${branch}`}>
