@@ -1,44 +1,34 @@
 ---
+export const prerender = true;
 import Layout from "@/layouts/Base.astro";
 import EntityPanel from "@/components/EntityPanel";
 
-// надёжно вытаскиваем все мета-файлы карточек из FS
-const FILES = import.meta.glob("/content/cards/*/*/*.meta.json", {
-  eager: true,
-  import: "default",
-}) as Record<string, any>;
-
-// опционно подхватываем реестр, если он существует
-const REG = import.meta.glob("/content/registry.json", {
-  eager: true,
-  import: "default",
-}) as Record<string, any>;
-const registry = REG["/content/registry.json"] ?? {};
-
 export async function getStaticPaths() {
-  const paths: Array<{ params: { branch: string; type: string; slug: string }, props: any }> = [];
+  const files = import.meta.glob("/content/cards/*/*/*.meta.json", {
+    eager: true,
+    import: "default",
+  }) as Record<string, any>;
 
-  for (const [path, meta] of Object.entries(FILES)) {
-    // ожидаем: /content/cards/<branch>/<type>/<slug>.meta.json
-    const m = path.match(/^\/content\/cards\/([^/]+)\/([^/]+)\/([^/]+)\.meta\.json$/);
+  const regMap = import.meta.glob("/content/registry.json", {
+    eager: true,
+    import: "default",
+  }) as Record<string, any>;
+  const registry = regMap["/content/registry.json"] ?? {};
+
+  const paths: Array<{ params: { branch: string; type: string; slug: string }, props: any }> = [];
+  for (const [p, meta] of Object.entries(files)) {
+    const m = p.match(/^\/content\/cards\/([^/]+)\/([^/]+)\/([^/]+)\.meta\.json$/);
     if (!m) continue;
     const [, branch, type, slug] = m;
-
-    // страховка: пропускаем, если чего-то нет
-    if (!branch || !type || !slug) continue;
-
     paths.push({
       params: { branch, type, slug },
-      props: { meta, branch, type, slug },
+      props: { meta, branch, type, slug, registry },
     });
   }
-
   return paths;
 }
 
-const { meta, branch, type, slug } = Astro.props;
-
-// EntityPanel ждёт во мн. числе. Преобразуем type -> types
+const { meta, branch, type, slug, registry } = Astro.props;
 const viewTypePlural = type.endsWith("s") ? type : `${type}s`;
 ---
 
