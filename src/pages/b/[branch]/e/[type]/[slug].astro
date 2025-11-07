@@ -3,34 +3,39 @@ import Layout from "@/layouts/Base.astro";
 import EntityPanel from "@/components/EntityPanel.tsx";
 import { loadPaths } from "@/lib/paths";
 
+const { branch, type, slug } = Astro.params;
+
 let meta: any = {};
+{
+  const metas = import.meta.glob("/src/data/meta/**/**/**.json", { eager: true });
+  const key = `/src/data/meta/${branch}/${type}/${slug}.json`;
+  const hit = metas[key] as any;
+  if (hit) meta = hit.default ?? hit;
+}
+
 let registry: any = {};
-try {
-  const mod = await import(`@/data/meta/${Astro.params.branch}/${Astro.params.type}/${Astro.params.slug}.json`, { assert: { type: "json" } } as any);
-  meta = mod.default ?? mod;
-} catch {}
-try {
-  const modR = await import("@/data/registry.json", { assert: { type: "json" } } as any);
-  registry = modR.default ?? modR;
-} catch {}
+{
+  const regs = import.meta.glob("/src/data/registry.json", { eager: true });
+  const hit = regs["/src/data/registry.json"] as any;
+  if (hit) registry = hit.default ?? hit;
+}
 
 export async function getStaticPaths() {
   const entries = await loadPaths();
-  // Если хочешь ограничить список для /e/, фильтруй тут; иначе — те же пути.
+  // при желании отфильтруй тут только «events»
   return entries.map(({ branch, type, slug }) => ({
     params: { branch, type, slug },
     props: { branch, type, slug },
   }));
 }
-const { branch, type, slug } = Astro.params;
 ---
 
 <Layout title={`CanonAR • ${meta?.title ?? slug}`}>
   <h2 style="margin:0 0 12px 0;">{meta?.title ?? meta?.name ?? slug}</h2>
   <EntityPanel
-    branch={branch}
-    viewType={type}
-    type={type}
+    branch={Astro.params.branch}
+    viewType={Astro.params.type}
+    type={Astro.params.type}
     meta={meta}
     registry={registry}
   />
