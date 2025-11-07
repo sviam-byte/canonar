@@ -1,0 +1,26 @@
+{
+  "entity_id": "1b2b2a4e-7f6c-4e8b-9a1d-0f2f1f2e3a10",
+  "type": "place",
+  "title": "Массборг · Площадь Террас",
+  "subtitle": "Узел трафика и экспозиций",
+  "authors": [{ "name": "Канонар", "role": "curator" }],
+  "year": 410,
+  "version_tags": ["current"],
+  "status": "published",
+  "tags": ["центр", "трафик", "экспозиции"],
+  "relations": [],
+  "media": [],
+  "model_ref": "place.core.v1",
+  "param_bindings": {
+    "load_factor": 0.68,
+    "O2_margin": 0.21,
+    "traffic": 0.82,
+    "maintenance_rate": 0.50,
+    "shock_freq": 0.07
+  },
+  "coords": [1120, 730],
+  "param_locked": { "O2_margin": "Молот: лимит кислорода сектора" },
+  "summary": "Главная площадь Массборга. Высокая нагрузка и непрерывные экспозиции.",
+  "notes": "demo seed",
+  "changelog": [{ "t": "2025-11-07", "msg": "seed" }]
+}
