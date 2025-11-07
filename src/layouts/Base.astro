@@ -1,0 +1,29 @@
+---
+const { title = "Kainrax • CanonAR", description = "Interactive canon registry" } = Astro.props;
+---
+
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="description" content={description} />
+    <title>{title}</title>
+
+    <!-- базовые стили (опц.) -->
+    <style>
+      :root{
+        --bg:#0b0b0b; --fg:#e6e6e6; --muted:#3d3d3d; --link:#9cf;
+      }
+      html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);font:14px/1.5 ui-sans-serif,system-ui,Segoe UI,Roboto,Helvetica,Arial;}
+      a{color:var(--link);}
+      main{min-height:100vh;}
+      .container{max-width:1200px;margin:0 auto;padding:24px;}
+      code{background:rgba(255,255,255,.06);padding:1px 4px;border-radius:4px;}
+    </style>
+  </head>
+  <body>
+    <main class="container">
+      <slot />
+    </main>
+  </body>
+</html>
