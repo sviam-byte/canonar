@@ -1,28 +1,55 @@
 ---
-import '../../../styles/global.css';
-import siteIndex from '@/data/index.json';
+import { loadCardsByBranch, loadRegistry, type CardMeta } from "@/lib/content";
 
-export function getStaticPaths() {
-  return siteIndex.branches.map((b) => ({ params: { branch: b.name } }));
-}
+const { branch } = Astro.params as { branch: string };
+const cards = loadCardsByBranch(branch);
+const registry = loadRegistry(branch);
 
-const { branch } = Astro.params;
-const current = siteIndex.branches.find((b) => b.name === branch);
+// группировка по типам
+const groups = cards.reduce((acc: Record<string, CardMeta[]>, c) => {
+  const t = c.type || "other";
+  (acc[t] ||= []).push(c);
+  return acc;
+}, {});
+
+// порядок типов в UI
+const TYPE_ORDER = ["character","object","place","protocol","event","document","hybrid","other"];
+
+// счётчики
+const total = cards.length;
 ---
+
 <html lang="ru">
-  <head><meta charset="utf-8" /><title>{branch} · Канонар</title></head>
-  <body>
-    <main class="container">
-      <h1>Ветка: {branch}</h1>
-      {current ? (
-        <ul>
-          {current.types.map((t) => (
-            <li><a href={`/b/${branch}/list/${encodeURIComponent(t)}`}>{t}</a></li>
+  <head>
+    <meta charset="utf-8" />
+    <title>Ветка: {branch} — Канонар</title>
+  </head>
+  <body style="max-width: 980px; margin: 40px auto; padding: 0 16px;">
+    <h1>Ветка: {branch}</h1>
+    <p style="opacity:.8">Всего карточек: <b>{total}</b></p>
+
+    <nav style="display:flex; gap:12px; flex-wrap:wrap; margin: 12px 0 24px;">
+      {TYPE_ORDER.filter(t => groups[t]?.length)
+        .map((t) => <a href={`/${branch}/type/${t}`} style="color:#8ad">{t}s ({groups[t].length})</a>)
+      }
+      <a href={`/${branch}/all`} style="color:#8ad">все</a>
+    </nav>
+
+    {/* превью всех групп на одной странице */}
+    {TYPE_ORDER.filter(t => groups[t]?.length).map((t) => (
+      <section style="margin: 22px 0;">
+        <h2 style="margin: 8px 0 10px;">{t}s</h2>
+        <div style="display:grid; grid-template-columns: repeat(auto-fill,minmax(220px,1fr)); gap:10px;">
+          {groups[t].map((c) => (
+            <a href={`/${branch}/card/${c.type}/${c.slug}`} style="padding:10px; border:1px solid #333; border-radius:10px; text-decoration:none; color:#ddd;">
+              <div style="font-weight:700;">{c.title}</div>
+              {c.subtitle && <div style="opacity:.7; font-size:12px;">{c.subtitle}</div>}
+              <div style="margin-top:6px; font-size:12px; opacity:.65;">type: {c.type}</div>
+              {c.tags?.length ? <div style="margin-top:6px; font-size:12px; opacity:.8;">{c.tags.slice(0,4).join(" · ")}</div> : null}
+            </a>
           ))}
-        </ul>
-      ) : (
-        <p>Эта ветка не найдена.</p>
-      )}
-    </main>
+        </div>
+      </section>
+    ))}
   </body>
 </html>
