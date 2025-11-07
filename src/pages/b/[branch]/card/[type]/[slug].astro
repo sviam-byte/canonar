@@ -1,44 +1,47 @@
 ---
 import Layout from "@/layouts/Base.astro";
-import EntityPanel from "@/components/EntityPanel.tsx";
-import { loadPaths } from "@/lib/paths";
+import EntityPanel from "@/components/EntityPanel";
 
-const { branch, type, slug } = Astro.params;
+// надёжно вытаскиваем все мета-файлы карточек из FS
+const FILES = import.meta.glob("/content/cards/*/*/*.meta.json", {
+  eager: true,
+  import: "default",
+}) as Record<string, any>;
 
-// 1) Мягкая загрузка meta по glob
-let meta: any = {};
-{фс
-  const metas = import.meta.glob("/src/data/meta/**/**/**.json", { eager: true });
-  const key = `/src/data/meta/${branфch}/${type}/${slug}.json`;
-  const hit = metas[key] as any;
-  if (hit) meta = hit.default ?? hit;
-}
+// опционно подхватываем реестр, если он существует
+const REG = import.meta.glob("/content/registry.json", {
+  eager: true,
+  import: "default",
+}) as Record<string, any>;
+const registry = REG["/content/registry.json"] ?? {};
 
-// 2) Мягкая загрузка registry по glob
-let registry: any = {};
-{
-  const regs = import.meta.glob("/src/data/registry.json", { eager: true });
-  const hit = regs["/src/data/registry.json"] as any;
-  if (hit) registry = hit.default ?? hit;
-}
-
-// Генерация статических путей
 export async function getStaticPaths() {
-  const entries = await loadPaths();
-  return entries.map(({ branch, type, slug }) => ({
-    params: { branch, type, slug },
-    props: { branch, type, slug },
-  }));
+  const paths: Array<{ params: { branch: string; type: string; slug: string }, props: any }> = [];
+
+  for (const [path, meta] of Object.entries(FILES)) {
+    // ожидаем: /content/cards/<branch>/<type>/<slug>.meta.json
+    const m = path.match(/^\/content\/cards\/([^/]+)\/([^/]+)\/([^/]+)\.meta\.json$/);
+    if (!m) continue;
+    const [, branch, type, slug] = m;
+
+    // страховка: пропускаем, если чего-то нет
+    if (!branch || !type || !slug) continue;
+
+    paths.push({
+      params: { branch, type, slug },
+      props: { meta, branch, type, slug },
+    });
+  }
+
+  return paths;
 }
+
+const { meta, branch, type, slug } = Astro.props;
+
+// EntityPanel ждёт во мн. числе. Преобразуем type -> types
+const viewTypePlural = type.endsWith("s") ? type : `${type}s`;
 ---
 
-<Layout title={`CanonAR • ${meta?.title ?? slug}`}>
-  <h2 style="margin:0 0 12px 0;">{meta?.title ?? meta?.name ?? slug}</h2>
-  <EntityPanel
-    branch={Astro.params.branch}
-    viewType={Astro.params.type}
-    type={Astro.params.type}
-    meta={meta}
-    registry={registry}
-  />
+<Layout title={`${meta?.title ?? meta?.name ?? slug} · ${branch}`}>
+  <EntityPanel branch={branch} viewType={viewTypePlural} meta={meta} registry={registry} />
 </Layout>
