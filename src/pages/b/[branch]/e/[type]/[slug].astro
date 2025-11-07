@@ -2,13 +2,11 @@
 import Layout from "@/layouts/Base.astro";
 import EntityPanel from "@/components/EntityPanel";
 
-// надёжно вытаскиваем все мета-файлы карточек из FS
 const FILES = import.meta.glob("/content/cards/*/*/*.meta.json", {
   eager: true,
   import: "default",
 }) as Record<string, any>;
 
-// опционно подхватываем реестр, если он существует
 const REG = import.meta.glob("/content/registry.json", {
   eager: true,
   import: "default",
@@ -16,32 +14,21 @@ const REG = import.meta.glob("/content/registry.json", {
 const registry = REG["/content/registry.json"] ?? {};
 
 export async function getStaticPaths() {
-  const paths: Array<{ params: { branch: string; type: string; slug: string }, props: any }> = [];
-
+  const out: any[] = [];
   for (const [path, meta] of Object.entries(FILES)) {
-    // ожидаем: /content/cards/<branch>/<type>/<slug>.meta.json
     const m = path.match(/^\/content\/cards\/([^/]+)\/([^/]+)\/([^/]+)\.meta\.json$/);
     if (!m) continue;
     const [, branch, type, slug] = m;
-
-    // страховка: пропускаем, если чего-то нет
     if (!branch || !type || !slug) continue;
-
-    paths.push({
-      params: { branch, type, slug },
-      props: { meta, branch, type, slug },
-    });
+    out.push({ params: { branch, type, slug }, props: { meta, branch, type, slug } });
   }
-
-  return paths;
+  return out;
 }
 
 const { meta, branch, type, slug } = Astro.props;
-
-// EntityPanel ждёт во мн. числе. Преобразуем type -> types
 const viewTypePlural = type.endsWith("s") ? type : `${type}s`;
 ---
 
-<Layout title={`${meta?.title ?? meta?.name ?? slug} · ${branch}`}>
+<Layout title={`E · ${meta?.title ?? slug}`}>
   <EntityPanel branch={branch} viewType={viewTypePlural} meta={meta} registry={registry} />
 </Layout>
