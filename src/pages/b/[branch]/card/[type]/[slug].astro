@@ -1,0 +1,22 @@
+---
+import EntityPanel from "@/components/EntityPanel";
+import { loadCardsByBranch, loadRegistry } from "@/lib/content";
+
+const { branch, type, slug } = Astro.params as { branch: string; type: string; slug: string };
+const cards = loadCardsByBranch(branch);
+const meta = cards.find(c => c.type === type && c.slug === slug);
+
+if (!meta) {
+  throw new Error(`Card not found: ${branch}/${type}/${slug}`);
+}
+
+const registry = loadRegistry(branch);
+---
+
+<html lang="ru">
+  <head><meta charset="utf-8" /><title>{meta.title} — {branch}</title></head>
+  <body style="max-width:1080px;margin:30px auto;padding:0 16px;">
+    <a href={`/${branch}`} style="color:#8ad;">← назад</a>
+    <EntityPanel branch={branch} viewType={`${meta.type}s`} meta={meta} registry={registry} />
+  </body>
+</html>
