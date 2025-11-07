@@ -1,37 +1,34 @@
 // src/lib/paths.ts
 type CanonEntry = {
   branch: string;
-  type: "characters"|"objects"|"places"|"protocols"|"events"|"documents"|string;
+  type:
+    | "characters" | "objects" | "places" | "protocols" | "events" | "documents"
+    | (string & {});
   slug: string;
 };
 
-type CanonIndex = {
-  entries: CanonEntry[];
-};
+type CanonIndex = { entries: CanonEntry[] };
 
-/** Пытаемся загрузить сгенерированный индекс.
- *  План A: src/data/index.json (пишется скриптом build-index.mjs)
- *  План B: content/index.json (если ты туда пишешь)
- *  План Z: вернуть демо-набор путей, чтобы билд не падал.
+/** Пытаемся загрузить индекс путей «по-доброковому».
+ *  A: src/data/index.json (генерится скриптом)
+ *  B: content/index.json (если так удобнее)
+ *  Z: демо-набор, чтобы билд всегда проходил.
  */
 export async function loadPaths(): Promise<CanonEntry[]> {
-  // A: src/data/index.json
-  try {
-    const mod = await import("@/data/index.json", { assert: { type: "json" } } as any);
-    const idx = (mod.default ?? mod) as CanonIndex | CanonEntry[];
-    if (Array.isArray(idx)) return idx as CanonEntry[];
-    if (idx && Array.isArray(idx.entries)) return idx.entries;
-  } catch {/* noop */ }
+  // Используем import.meta.glob, чтобы отсутствие файла не роняло сборку
+  const globAny = import.meta.glob("/src/**/index.json", { eager: true });
 
-  // B: content/index.json
-  try {
-    const mod = await import("@/content/index.json", { assert: { type: "json" } } as any);
-    const idx = (mod.default ?? mod) as CanonIndex | CanonEntry[];
-    if (Array.isArray(idx)) return idx as CanonEntry[];
-    if (idx && Array.isArray(idx.entries)) return idx.entries;
-  } catch {/* noop */ }
+  const prefer = ["/src/data/index.json", "/src/content/index.json", "/src/index.json"];
+  for (const key of prefer) {
+    const mod = globAny[key] as any;
+    if (mod) {
+      const data = mod.default ?? mod;
+      if (Array.isArray(data)) return data as CanonEntry[];
+      if (data && Array.isArray((data as CanonIndex).entries)) return (data as CanonIndex).entries;
+    }
+  }
 
-  // Z: демо-пути, чтобы сборка не падала
+  // План Z
   return [
     { branch: "current", type: "objects",    slug: "o2-router-x1" },
     { branch: "current", type: "characters", slug: "einarr" },
