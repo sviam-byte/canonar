@@ -43,6 +43,7 @@ const fmt = (x: unknown, d = 3) =>
   typeof x === "number" && Number.isFinite(x) ? Number(x).toFixed(d) : "—";
 const singular = (t: string) => (t.endsWith("s") ? t.slice(0, -1) : t);
 
+// url snapshot
 const enc = (o: unknown) => {
   try { return btoa(unescape(encodeURIComponent(JSON.stringify(o)))); } catch { return ""; }
 };
@@ -50,7 +51,7 @@ const dec = <T,>(s: string | null): T | null => {
   try { return s ? (JSON.parse(decodeURIComponent(escape(atob(s)))) as T) : null; } catch { return null; }
 };
 
-/* ───────── fallback params (если registry пуст) ───────── */
+/* ───────── fallback param defs ───────── */
 type ParamDef = { min: number; max: number; step?: number; label?: string };
 
 const DEFAULT_PARAMS: Record<string, Record<string, ParamDef>> = {
@@ -60,6 +61,8 @@ const DEFAULT_PARAMS: Record<string, Record<string, ParamDef>> = {
     exergy_cost: { min: 0, max: 10, step: 0.1, label: "exergy_cost" },
     infra_footprint: { min: 0, max: 10, step: 0.1, label: "infra_footprint" },
     hazard_rate: { min: 0, max: 1, step: 0.01, label: "hazard_rate" },
+    cvar_alpha: { min: 0, max: 1, step: 0.01, label: "cvar_alpha" },
+    causal_penalty: { min: 0, max: 1, step: 0.01, label: "causal_penalty" },
     topo: { min: 0, max: 3, step: 0.01, label: "topo" },
     witness_count: { min: 0, max: 500, step: 1, label: "witness_count" },
     map_x: { min: 0, max: 100, step: 1, label: "map_x" },
@@ -74,13 +77,14 @@ const DEFAULT_PARAMS: Record<string, Record<string, ParamDef>> = {
     risk_tolerance: { min: 0, max: 1, step: 0.01, label: "risk_tolerance" },
     mandate_power: { min: 0, max: 1, step: 0.01, label: "mandate_power" },
     dark_exposure: { min: 0, max: 1, step: 0.01, label: "dark_exposure" },
+    causal_penalty: { min: 0, max: 1, step: 0.01, label: "causal_penalty" },
     topo: { min: 0, max: 3, step: 0.01, label: "topo" },
     map_x: { min: 0, max: 100, step: 1, label: "map_x" },
     map_y: { min: 0, max: 100, step: 1, label: "map_y" },
   },
 };
 
-/* ───────── tiny UI atoms ───────── */
+/* ───────── small UI atoms ───────── */
 function Row({ children }: { children: React.ReactNode }) {
   return <div style={{ display: "flex", gap: 12, alignItems: "center" }}>{children}</div>;
 }
@@ -203,12 +207,11 @@ export default function EntityPanel(props: Props) {
   const meta = props.meta || {};
 
   // параметры модели из registry с учётом extends/hybrid, иначе дефолты
-  const registryModelParams =
-    getParamDefs(registry, String(modelKey), String(tkey));
+  const registryModelParams = getParamDefs(registry, String(modelKey), String(tkey));
 
   const modelParams: Record<string, ParamDef> =
     registryModelParams && Object.keys(registryModelParams).length > 0
-      ? registryModelParams
+      ? (registryModelParams as any)
       : DEFAULT_PARAMS[tkey] || DEFAULT_PARAMS.object;
 
   // блокировки: глобальные и локальные
@@ -221,12 +224,11 @@ export default function EntityPanel(props: Props) {
     Object.fromEntries(Object.entries(modelParams).map(([k, def]) => [k, Number(def.min)])),
   );
 
-  // если сменились defs — обнови defaults для кнопки Defaults
+  // если defs поменялись — обнови defaults для кнопки Defaults
   useEffect(() => {
     defaultsRef.current = Object.fromEntries(
       Object.entries(modelParams).map(([k, def]) => [k, Number(def.min)])
     );
-    // не трогаем params, чтобы не затирать p= из URL
   }, [modelParams]);
 
   // старт: canon поверх дефолтов
@@ -248,9 +250,7 @@ export default function EntityPanel(props: Props) {
         if (js && typeof js.params === "object") {
           setParams((s) => ({ ...s, ...js.params }));
         }
-      } catch {
-        /* no-op */
-      }
+      } catch { /* no-op */ }
     };
     reader.readAsText(file);
   }, []);
@@ -315,7 +315,11 @@ export default function EntityPanel(props: Props) {
     }
   }, [branch, meta, params, registry, tkey, modelKey, compute]);
 
-  const sim = useMemo(() => simulate({ param_bindings: params }, 30), [simulate, params]);
+  const [simHorizon, setSimHorizon] = useState<number>(30);
+  const sim = useMemo(
+    () => simulate({ param_bindings: params }, simHorizon),
+    [simulate, params, simHorizon]
+  );
 
   // подсказки и доки
   const hints = (meta?.param_hints ?? {}) as Record<string, string>;
@@ -329,8 +333,9 @@ export default function EntityPanel(props: Props) {
     [scenarioFocus, tkey],
   );
 
+  // построение контролов
   const controls = useMemo(() => {
-    const out: Array<{
+    const rows: Array<{
       k: string;
       min: number;
       max: number;
@@ -345,7 +350,7 @@ export default function EntityPanel(props: Props) {
     for (const [k, def] of Object.entries(modelParams)) {
       const disabled = !ignoreLocks && (lockedLocal.has(k) || !!(lockedGlobal?.[k]?.locked));
       if (showOnlyAdjustable && disabled) continue;
-      out.push({
+      rows.push({
         k,
         min: Number(def.min),
         max: Number(def.max),
@@ -358,7 +363,9 @@ export default function EntityPanel(props: Props) {
         highlighted: relevant ? relevant.has(k) : false,
       });
     }
-    return out;
+    // лёгкая эвристика сортировки: сначала подсвеченное сценареем
+    rows.sort((a, b) => Number(b.highlighted) - Number(a.highlighted));
+    return rows;
   }, [modelParams, params, hints, docs, showOnlyAdjustable, relevant, ignoreLocks, lockedLocal, lockedGlobal]);
 
   // пояснение
@@ -369,11 +376,11 @@ export default function EntityPanel(props: Props) {
       const res = Number(params.resources ?? 0.5);
       const loy = Number(params.loyalty ?? 0.5);
       const infl = (will * 0.6 + comp * 0.6 + res * 0.4) * (0.7 + 0.3 * loy);
-      const mon = 0.6 * Number(params.stress ?? 0.3) + 0.4 * Number(params.dark_exposure ?? 0.2);
+      const mon = 0.6 * Number(params.stress ?? 0.3) + 0.4 * Number(params.dark_exposure ?? 0.2) + 0.3 * Number(params.causal_penalty ?? 0) - 0.25 * loy;
       return [
         `Influence ≈ (0.6·will + 0.6·competence + 0.4·resources)·(0.7 + 0.3·loyalty) = ${fmt(infl, 3)}`,
-        `Pr[monstro] ↑ от stress и dark_exposure = ${fmt(mon, 3)}`,
-        `S = σ(α₁·Pv − α₂·Vσ − α₃·drift + α₄·topo).`,
+        `Pr[monstro] ~ 0.6·stress + 0.4·dark + 0.3·causal_penalty − 0.25·loyalty = ${fmt(mon, 3)}`,
+        `S = σ(α₁·Pv − α₂·Vσ − α₃·drift + α₄·topo + α₅·log(1+witness)).`,
       ];
     }
     const A = Number(params["A*"] ?? params.A_star ?? 100);
@@ -381,8 +388,8 @@ export default function EntityPanel(props: Props) {
     const dose = A ? E / A : 0;
     return [
       `dose = E / A* = ${fmt(dose, 3)} (целевое ≈ 1)`,
-      `Vσ ↑ от exergy_cost, infra_footprint, hazard_rate и ошибок дозы`,
-      `S = σ(1.2·Pv − 1.1·Vσ − 0.9·drift + 0.8·topo + 0.25·log(1+witness))`,
+      `Vσ ↑ от exergy_cost, infra_footprint, hazard_rate, cvar_alpha, causal_penalty и ошибок дозы`,
+      `S = σ(1.2·Pv − 1.1·Vσ − 0.9·drift + 0.8·topo + 0.25·log(1+witness)).`,
     ];
   }, [params, tkey]);
 
@@ -491,6 +498,28 @@ export default function EntityPanel(props: Props) {
               <option value="negotiation">переговоры</option>
               <option value="repair_nomonstr">ремонт без монстра</option>
               <option value="incident_localize">локализация инцидента</option>
+              <option value="evac_corridor">эвакуационный коридор</option>
+              <option value="trade_treaty">торговый договор</option>
+              <option value="stealth_surface">тихий выход</option>
+              <option value="containment">ограничение</option>
+              <option value="o2_surplus_route">O₂-маршрут</option>
+              <option value="budget_ok">бюджет</option>
+              <option value="evidence_publish">публикация</option>
+              <option value="rollback_safe">безопасный откат</option>
+              <option value="quarantine_needed">карантин</option>
+            </select>
+          </label>
+
+          <label style={{ display: "inline-flex", gap: 6, alignItems: "center", fontSize: 12 }}>
+            горизонт симуляции:
+            <select
+              value={String(simHorizon)}
+              onChange={(e) => setSimHorizon(Number(e.target.value))}
+              style={{ padding: "2px 6px" }}
+            >
+              <option value="7">7d</option>
+              <option value="30">30d</option>
+              <option value="90">90d</option>
             </select>
           </label>
         </div>
@@ -557,7 +586,7 @@ export default function EntityPanel(props: Props) {
 
         {/* графики */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
-          <Spark data={sim} x="t" y="S" title="Стабильность S (30d)" />
+          <Spark data={sim} x="t" y="S" title={`Стабильность S (${simHorizon}d)`} />
           <RadarParams params={params} defs={modelParams} title="Профиль параметров" />
         </div>
 
@@ -583,7 +612,7 @@ export default function EntityPanel(props: Props) {
               currentPoint={point}
               xLabel={xKey}
               yLabel={yKey}
-              title="Траектория (30d) и текущая точка"
+              title="Траектория и текущая точка"
             />
           </>
         ) : null}
