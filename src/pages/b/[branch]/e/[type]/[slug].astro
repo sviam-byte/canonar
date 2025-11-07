@@ -1,44 +1,47 @@
 ---
-// src/pages/b/[branch]/e/[type]/[slug].astro
-import "~/styles/global.css";
+import Layout from "@/layouts/Base.astro";
 import EntityPanel from "@/components/EntityPanel";
-import registry from "@/data/models/registry.json";
 
+// Собираем все карточки из content/cards/<branch>/<type>/*.meta.json
 export async function getStaticPaths() {
-  const { default: idx } = await import("@/data/index.json");
+  // meta-файлы: /content/cards/current/characters/kaeya.meta.json и т.д.
+  const metas = import.meta.glob("/content/cards/*/*/*.meta.json", { eager: true });
 
-  const importMeta = (e) =>
-    import(`@/data/b/${e.branch}/e/${e.type}/${e.meta.slug}.meta.json`);
+  // registry: /content/models/<branch>/registry.json
+  const registries = import.meta.glob("/content/models/*/registry.json", { eager: true });
 
-  const paths = await Promise.all(
-    idx.entries.map(async (e) => {
-      const { default: meta } = await importMeta(e);
-      return {
-        params: { branch: e.branch, type: e.type, slug: e.meta.slug },
-        props: { branch: e.branch, type: e.type, meta },
-      };
-    })
-  );
+  const paths = [];
+  for (const fullPath in metas) {
+    // fullPath: "/content/cards/current/objects/coil-reactor.meta.json"
+    const m = fullPath.match(/^\/content\/cards\/([^/]+)\/([^/]+)\/([^/.]+)\.meta\.json$/);
+    if (!m) continue;
+    const [, branch, type, slug] = m;
+
+    const meta = (metas[fullPath] as any)?.default ?? (metas[fullPath] as any);
+    const regKey = `/content/models/${branch}/registry.json`;
+    const registry = (registries[regKey] as any)?.default ?? (registries[regKey] as any) ?? {};
+
+    paths.push({
+      params: { branch, type, slug },
+      props: { branch, type, slug, meta, registry },
+    });
+  }
 
   return paths;
 }
 
-const { branch, type, meta } = Astro.props;
+const { branch, type, slug, meta, registry } = Astro.props;
 ---
 
-<html lang="ru">
-  <head>
-    <meta charset="utf-8" />
-    <title>{meta.title}</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-  </head>
-  <body>
+<Layout title={`${meta?.title ?? slug} — ${type}`}>
+  <main style="max-width:1200px;margin:0 auto;padding:24px;">
+    <h2 style="margin:0 0 12px 0;">Ветка: <code>{branch}</code> • Тип: <code>{type}</code> • Слаг: <code>{slug}</code></h2>
+
     <EntityPanel
       branch={branch}
-      viewType={type}   /* plural */
+      viewType={`${type}s`}
       meta={meta}
       registry={registry}
-      client:only="react"   /* избегаем SSR-крашей EligibilityBadges */
     />
-  </body>
-</html>
+  </main>
+</Layout>
