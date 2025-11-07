@@ -1,15 +1,48 @@
 ---
-import { loadCardsByBranch } from "@/lib/content";
-const { branch, type } = Astro.params as { branch: string; type: string };
-const cards = loadCardsByBranch(branch).filter(c => c.type === type);
+export const prerender = true;
+
+import Layout from "@/layouts/Base.astro";
+
+// Собираем возможные {branch,type} из мета-файлов
+const metas = import.meta.glob("/src/data/b/*/e/*/*.meta.json", {
+  eager: true,
+  import: "default",
+}) as Record<string, any>;
+
+export async function getStaticPaths() {
+  const set = new Set<string>();
+  for (const p of Object.keys(metas)) {
+    const m = p.match(/^\/src\/data\/b\/([^/]+)\/e\/([^/]+)\/[^/]+\.meta\.json$/);
+    if (!m) continue;
+    const [, branch, type] = m;
+    set.add(`${branch}__${type}`);
+  }
+  return Array.from(set).map((k) => {
+    const [branch, type] = k.split("__");
+    return { params: { branch, type } };
+  });
+}
+
+// На самой странице читаем готовый список
+const { branch, type } = Astro.params;
+const lists = import.meta.glob("/src/data/b/*/e/*/list.json", {
+  eager: true,
+  import: "default",
+}) as Record<string, any>;
+
+const key = `/src/data/b/${branch}/e/${type}/list.json`;
+const list = (lists[key] ?? []) as Array<{ slug: string; title: string }>;
 ---
 
-<h1 style="max-width:980px;margin:40px auto 12px;padding:0 16px;">{type}s — {branch}</h1>
-<div style="max-width:980px;margin:0 auto;padding:0 16px;display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;">
-  {cards.map(c => (
-    <a href={`/${branch}/card/${c.type}/${c.slug}`} style="padding:12px;border:1px solid #333;border-radius:10px;color:#ddd;text-decoration:none;">
-      <div style="font-weight:700;">{c.title}</div>
-      <div style="opacity:.7;font-size:12px;">{c.subtitle || ""}</div>
-    </a>
-  ))}
-</div>
+<Layout title={`${type} · ${branch}`}>
+  <h1>{type} · {branch}</h1>
+  {list?.length ? (
+    <ul>
+      {list.map((it) => (
+        <li><a href={`/b/${branch}/e/${type}/${it.slug}/`}>{it.title}</a></li>
+      ))}
+    </ul>
+  ) : (
+    <p>Нет записей.</p>
+  )}
+</Layout>
