@@ -12,6 +12,19 @@ type Ctx = {
   hasIris?: boolean;
 };
 
+/* ── экспозиция для объектов (добавлено) ── */
+export type DoseStep = { E: number; dose: number; riskDry: number; riskDecay: number };
+export function stepExposure(
+  Eprev: number, Astar: number, v: number, q: number, rho: number
+): DoseStep {
+  // E_{t+1} = rho*E_t + v*q
+  const E = rho * Eprev + v * q;
+  const dose = computeDose(E, Astar);
+  const riskDry   = Math.max(0, E - (Astar || 0));
+  const riskDecay = Math.max(0, (Astar || 0) - E);
+  return { E, dose, riskDry, riskDecay };
+}
+
 /* ── объект: дозировка/риск/долг ── */
 export function computeDose(E: number, Astar: number) {
   if (!Astar || !Number.isFinite(Astar)) return 0;
@@ -37,6 +50,11 @@ export function computePvObject(p: Record<string, any>, ctx: Ctx = {}) {
   return Pv;
 }
 
+/* ── альтернативный Pv, если нужны «дельты информации» (добавлено, необязательно) ── */
+export function computePvFromDeltas(dLL: number, kappa: number, dLogDetF: number) {
+  return dLL + kappa * dLogDetF;
+}
+
 export function computeVsigmaObject(p: Record<string, any>, dose: number, ctx: Ctx = {}) {
   const ex = Number(p.exergy_cost ?? 0);
   const infra = Number(p.infra_footprint ?? 0);
@@ -60,6 +78,24 @@ export function computeVsigmaObject(p: Record<string, any>, dose: number, ctx: C
   if (ctx.branch === 'pre-rector') V *= 0.95;
 
   return V;
+}
+
+/* ── обобщённый Vsigma по «весам λ» (добавлено, используется в сценариях при желании) ── */
+export function computeVsigmaWeighted(
+  exergyX: number,
+  cvar: number,
+  infraH: number,
+  causalC: number,
+  dosePenalty: number,
+  lambda: { x: number; cvar: number; infra: number; causal: number; dose: number }
+) {
+  return (
+    lambda.x*exergyX +
+    lambda.cvar*cvar +
+    lambda.infra*infraH +
+    lambda.causal*causalC +
+    lambda.dose*dosePenalty
+  );
 }
 
 export function computeDriftObject(p: Record<string, any>, opt?: { dose?: number }) {
