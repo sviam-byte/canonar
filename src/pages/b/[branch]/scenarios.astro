@@ -1,0 +1,29 @@
+---
+export const prerender = true;
+import Layout from "@/layouts/Base.astro";
+
+export async function getStaticPaths() {
+  const gl = import.meta.glob("/src/data/sim/b/*/*.json", { eager: true, import: "default" }) as Record<string, any>;
+  const byBranch = new Map<string, { slug:string; title:string }[]>();
+  for (const [p, v] of Object.entries(gl)) {
+    const m = p.match(/^\/src\/data\/sim\/b\/([^/]+)\/([^/]+)\.json$/);
+    if (!m) continue;
+    const [, branch, slug] = m;
+    const arr = byBranch.get(branch) || [];
+    arr.push({ slug, title: v.title || slug });
+    byBranch.set(branch, arr);
+  }
+  const out = [];
+  for (const [branch, items] of byBranch.entries()) {
+    out.push({ params: { branch }, props: { branch, items } });
+  }
+  return out;
+}
+const { branch, items } = Astro.props;
+---
+<Layout title={`Scenarios · ${branch}`}>
+  <h1>Сценарии · {branch}</h1>
+  <ul>
+    {items.map((it) => <li><a href={`/b/${branch}/scenario/${it.slug}/`}>{it.title}</a></li>)}
+  </ul>
+</Layout>
