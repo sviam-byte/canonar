@@ -1,0 +1,20 @@
+{
+  "title": "Stabilize-Exhibit: артефакт без пересушки · FULL",
+  "description": "PID держит дозу ≈ 1, учитываем шок, патчи и авто-карантин.",
+  "entityRef": { "type": "objects", "slug": "o2-router-x1" },
+  "engine": "full",
+  "days": 30,
+  "state": { "E": 520, "A": 900, "H": 0.4, "R": 0.82, "Mw": 0.3, "Topo": 0.25, "Cvar": 0.35 },
+  "k": { "rho": 0.985, "kA_decay": 0.02, "kH_leak": 0.01, "kR_wear": 0.08, "kC_decay": 0.12 },
+  "policy": { "type": "pid", "kp": 0.7, "ki": 0.06, "kd": 0.25, "du_max": 18, "A_bounds": [50, 1600], "settle_band": 0.03 },
+  "noise": { "sigmaE": 3.0, "sigmaA": 1.2, "seed": 42, "repeats": 50 },
+  "interventions": [
+    { "t": 0,  "kind": "patch_plan", "R": 2, "s": 0.7 },
+    { "t": 2,  "kind": "shock", "cvarBoost": 0.25, "days": 5 },
+    { "t": 3,  "kind": "exposure_plan", "rho": 0.988, "v": 45, "q": 0.62 },
+    { "t": 7,  "kind": "witness_rally", "addMw": 0.25, "addTopo": 0.05 },
+    { "t": 8,  "kind": "reliability_boost", "dR": 0.06 },
+    { "t": 9,  "kind": "budget_cut", "dInfra": 0.1, "dExergy": 0.05 },
+    { "t": 10, "kind": "auto_quarantine_at_S", "threshold": 0.35 }
+  ]
+}
