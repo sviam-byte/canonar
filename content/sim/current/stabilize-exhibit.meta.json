@@ -1,0 +1,10 @@
+{
+  "title": "Stabilize-Exhibit: артефакт без пересушки",
+  "entityRef": { "type": "objects", "slug": "o2-router-x1" },
+  "days": 30,
+  "interventions": [
+    { "t": 0,  "kind": "patch_plan", "R": 2, "s": 0.7 },
+    { "t": 3,  "kind": "exposure_plan", "Astar": 120, "v": 40, "q": 0.65, "rho": 0.985 },
+    { "t": 7,  "kind": "witness_rally", "addMw": 0.25, "addTopo": 0.05 }
+  ]
+}
