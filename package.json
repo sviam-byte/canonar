@@ -1,6 +1,6 @@
 {
   "name": "kainrax-canonar",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -9,13 +9,15 @@
   "packageManager": "npm@10",
   "scripts": {
     "clean": "rimraf dist .astro",
-    "build:index": "node scripts/build-index.mjs",
     "validate:json": "node scripts/validate-json.mjs",
+    "build:index": "node scripts/build-index.mjs",
     "prebuild": "npm run validate:json && npm run build:index",
     "build": "astro build",
     "dev": "astro dev --host",
     "preview": "astro preview",
     "typecheck": "tsc --noEmit",
+    "check": "astro check && tsc --noEmit",
+    "format": "prettier -w .",
     "lint": "echo \"(optional) add eslint if нужно\""
   },
   "dependencies": {
@@ -28,6 +30,7 @@
   },
   "devDependencies": {
     "@types/node": "^20.14.10",
+    "prettier": "^3.3.3",
     "rimraf": "^5.0.10",
     "typescript": "^5.6.3"
   }
