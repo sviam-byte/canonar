@@ -11,6 +11,7 @@ import {
   computePvCharacter,
   computeVsigmaCharacter,
   computeDriftCharacter,
+  stepExposure,
 } from "./metrics";
 
 /* ── типы ── */
@@ -115,7 +116,7 @@ export function computeCharacter(meta: any, registry: RegistryT, branch: string)
   return { Pv, Vsigma, S, influence, monstro_pr, drift, topo, witness };
 }
 
-/* ── симуляторы ── */
+/* ── симуляторы «как было» ── */
 export function simulateObject(meta: any, days = 30, registry?: RegistryT, branch?: string) {
   const p0 = materializeParams(meta, registry || {}, "object");
   const out: Array<any> = [];
@@ -162,4 +163,123 @@ export function computeEntity(meta: any, registry: RegistryT, branch: string) {
   return type === "character"
     ? computeCharacter(meta, registry, branch)
     : computeObject(meta, registry, branch);
+}
+
+/* ── сценарный симулятор с интервенциями (добавлено) ── */
+export type Intervention =
+  | { t: number; kind: "exposure_plan"; Astar?: number; v?: number; q?: number; rho?: number }
+  | { t: number; kind: "patch_plan"; R: number; s: number }                // снижает exergy/infra
+  | { t: number; kind: "witness_rally"; addMw?: number; addTopo?: number } // поднимает witness/topo
+  | { t: number; kind: "shock"; cvarBoost: number; days: number }          // рост cvar на период
+  | { t: number; kind: "causal_surgery"; deltaC: number };                 // правка causal_penalty
+
+export function simulateInterventions(
+  meta: any,
+  opts: {
+    days?: number;
+    registry?: RegistryT;
+    branch?: BranchT | string;
+    interventions?: Intervention[];
+  } = {}
+) {
+  const days = opts.days ?? 30;
+  const registry = opts.registry || ({} as RegistryT);
+  const branch = (opts.branch as BranchT) || registry.branch || 'current';
+  const interventions = opts.interventions || [];
+
+  const type = String(meta?.type || meta?.model_ref || "object");
+
+  // базовые параметры из карточки/модели
+  const p0 = materializeParams(meta, registry, type === "character" ? "character" : "object");
+
+  // состояние сценария
+  let E   = Number(p0.E ?? p0.E0 ?? 50);
+  let A   = Number(p0["A*"] ?? p0.A_star ?? 100);
+  let v   = Number(p0.v ?? 20);
+  let q   = Number(p0.q ?? 0.6);
+  let rho = Number(p0.rho ?? 0.98);
+
+  let witness = Number(p0.witness_count ?? 3);
+  let topo    = Number(p0.topo ?? p0.topo_class ?? 0);
+
+  let exergy  = Number(p0.exergy_cost ?? 0.8);
+  let infra   = Number(p0.infra_footprint ?? 0.4);
+  let cvar    = Number(p0.cvar ?? p0.cvar_alpha ?? 0.3);
+  let causal  = Number(p0.causal_penalty ?? 0.2);
+
+  // «активные шоки»: день_окончания -> величина
+  const activeShocks = new Map<number, number>();
+
+  // индексируем интервенции по дню
+  const byDay = new Map<number, Intervention[]>();
+  for (const iv of interventions) {
+    const arr = byDay.get(iv.t) || [];
+    arr.push(iv);
+    byDay.set(iv.t, arr);
+  }
+
+  const rows: Array<{
+    day: number; S: number; Pv: number; Vsigma: number; dose: number; E: number;
+  }> = [];
+
+  for (let t = 0; t < days; t++) {
+    // применяем интервенции дня t
+    for (const iv of (byDay.get(t) || [])) {
+      if (iv.kind === "exposure_plan") {
+        if (iv.Astar !== undefined) A = iv.Astar;
+        if (iv.v     !== undefined) v = iv.v;
+        if (iv.q     !== undefined) q = iv.q;
+        if (iv.rho   !== undefined) rho = iv.rho;
+      } else if (iv.kind === "patch_plan") {
+        // патч: чутка уменьшить издержки
+        exergy = Math.max(0, exergy - 0.2 * iv.R * iv.s);
+        infra  = Math.max(0, infra  - 0.05 * iv.R);
+      } else if (iv.kind === "witness_rally") {
+        witness = Math.max(0, witness + (iv.addMw ?? 0.3));
+        topo    = topo + (iv.addTopo ?? 0.05);
+      } else if (iv.kind === "shock") {
+        cvar += iv.cvarBoost;
+        activeShocks.set(t + iv.days, iv.cvarBoost);
+      } else if (iv.kind === "causal_surgery") {
+        causal = Math.max(0, causal + iv.deltaC);
+      }
+    }
+
+    // если шок закончился — откатываем добавку cvar
+    if (activeShocks.has(t)) {
+      cvar = Math.max(0, cvar - (activeShocks.get(t) || 0));
+      activeShocks.delete(t);
+    }
+
+    // формируем параметр-набор для compute* на этот день
+    const pToday: any = {
+      ...p0,
+      witness_count: witness,
+      topo,
+      exergy_cost: exergy,
+      infra_footprint: infra,
+      cvar,
+      causal_penalty: causal
+    };
+
+    // объектам обновляем E через экспозицию, персонажам — без E
+    let dose = 0;
+    if (type !== "character") {
+      const st = stepExposure(E, A, v, q, rho);
+      E = st.E;
+      dose = st.dose;
+      pToday.E = E;
+      pToday["A*"] = A;
+      pToday.A_star = A;
+    }
+
+    // расчёт Pv, Vσ, дрейфа и S
+    const snap = (type === "character")
+      ? computeCharacter({ ...meta, param_bindings: pToday }, registry, branch)
+      : computeObject({ ...meta, param_bindings: pToday }, registry, branch);
+
+    rows.push({ day: t, S: snap.S, Pv: snap.Pv, Vsigma: snap.Vsigma, dose, E });
+  }
+
+  return rows;
 }
